@@ -1,0 +1,14 @@
+# Dépendances Node.js
+node_modules/
+front/node_modules/
+
+# Dossiers générés par Nuxt
+.nuxt/
+front/.nuxt/
+.output/
+front/.output/
+dist/
+front/dist/
+
+# Variables d'environnement (sécurité)
+.env
