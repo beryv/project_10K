@@ -7,7 +7,12 @@ export default defineNuxtConfig({
   vite: {
     server: {
       watch: {
-        usePolling: true
+        usePolling: true,
+        interval: 1000 // Vérifie les changements toutes les secondes
+      },
+      hmr: {
+        protocol: 'ws',
+        clientPort: 3000
       }
     }
   }
