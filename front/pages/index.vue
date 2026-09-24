@@ -4,15 +4,20 @@
     <h1 class="text-5xl font-bold text-emerald-400 mb-4">
       Mon Projet Nuxt 3
     </h1>
-    <p class="text-lg text-slate-300">
-      Tailwind CSS et Docker fonctionnent parfaitement ! 🚀
-    </p>
+    <div>
+      <h1>List of all accounts</h1>
+      <ul>
+        <li v-if="data" v-for="account in data" >{{ account.account_number }}</li>
+        <li v-else >No data Found!</li>
+      </ul>
+    </div>
   </div>
   <AppFooter></AppFooter>
-</template>
+</template> 
 
-<script lang=ts>
+<script setup lang=ts>
 
-console.log("test")
+// Fetch all accounts from the api
+const { data } = await useFetch('/api/accounts')
 
 </script>

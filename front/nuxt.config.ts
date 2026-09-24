@@ -15,5 +15,8 @@ export default defineNuxtConfig({
         clientPort: 3000
       }
     }
+  },
+  routeRules: {
+    '/api/**': { proxy: 'http://host.docker.internal:8000/**' }
   }
 })
