@@ -3,17 +3,32 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: [
     '@nuxtjs/tailwindcss',
-    '@nuxtjs/i18n'
+    '@nuxtjs/i18n',
+    '@nuxt/icon',
   ],
+  icon: {
+    serverBundle: {
+      collections: ['mdi']
+    },
+    fallbackToApi: false, // Interdit à Nuxt de chercher sur Internet (évite les erreurs)
+    clientBundle: {
+      scan: true,
+    }
+  },
   i18n: {
     locales: [
       { code: 'fr', iso: 'fr-FR', file: 'fr.json', name: 'Français' },
       { code: 'en', iso: 'en-US', file: 'en.json', name: 'English' }
     ],
     defaultLocale: 'fr',
+     detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'i18n_redirected',
+      redirectOn: 'root'
+    },
     lazy: true,
-    langDir: 'locales/', // Dossier où seront stockées les traductions
-    strategy: 'prefix_except_default' // Les URLs en anglais auront /en/
+    langDir: 'locales/', // Dossier où sont stockées les traductions
+    strategy: 'prefix'
   },
   vite: {
     server: {
