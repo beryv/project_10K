@@ -58,42 +58,6 @@ def custom_swagger_ui_html():
   )
 
 
-# --- SYSTEM DASHBOARD / ROOT ROUTE ---
-@app.get("/", response_class=HTMLResponse, tags=["System Dashboard"])
-def read_root():
-  return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Secure Core Banking Dashboard</title>
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 40px; }
-            .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-            h1 { color: #1a73e8; margin-top: 0; }
-            .badge { background: #e8f0fe; color: #1a73e8; padding: 5px 10px; border-radius: 4px; font-size: 14px; font-weight: bold; }
-            .btn { display: inline-block; background: #1a73e8; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; margin-top: 15px; }
-            .btn:hover { background: #1557b0; }
-            ul { line-height: 1.6; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Secure Core Banking API</h1>
-            <span class="badge">Status: Operational (Polished UI)</span>
-            <p>Your modular FastAPI microservice is successfully running inside Docker with custom styled documentation.</p>
-            <h3>Quick Links</h3>
-            <ul>
-                <li><strong>Interactive API Documentation:</strong> <a href="/docs" target="_blank">Swagger UI (/docs)</a></li>
-            </ul>
-            <a href="/docs" class="btn">Open API Explorer</a>
-        </div>
-    </body>
-    </html>
-    """
-
-
 # --- ADMIN AUTHENTICATION ---
 @app.post("/token", tags=["Authentication"])
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
