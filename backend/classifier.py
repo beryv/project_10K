@@ -53,6 +53,11 @@ JSON Schema: {
 "primary\_recommendation": "<string: single highest impact immediate action>",
 "additional\_actions": ["<string: secondary recommended action>", "..."],
 "financial\_health\_indicator": "healthy" | "attention\_needed" | "critical"
+\#### QUERY TYPE 3: ANSWER A PERSON'S QUESTION 
+Trigger: Request starting with "request for info (query 3):" 
+Description: Answers questions on the website's design (can give filler answers for now)
+JSON Schema: {
+"response": "<string: guides users in using the bank app>"
 }
 """
 
@@ -86,4 +91,15 @@ def recommend(c: list[Account], l: list[Event]):
                                        contents=pr)
 
     res = sess.send_message(pr)
-    return loads(res)    
+    return loads(res)
+
+def answer_prompt(p: str):
+
+    pr = "request for info (query 3): " + p
+    res = sess.models.generate_content(model="gemini-3.5-flash-lite",
+                                       config=genai.types.GenerateContentConfig(
+                                           system_instruction=sys_prompt
+                                       ),
+                                       contents=pr)
+
+    return res
