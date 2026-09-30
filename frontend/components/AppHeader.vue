@@ -24,20 +24,34 @@ const handleLogout = async () => {
 </script>
 
 <template>
-    <div>
-        <h1>HEADER</h1>
-        <NuxtLink to="/" class="mt-6 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded transition">
-            Home
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm">
+    <nav class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+      <NuxtLink to="/" class="text-xl font-bold text-emerald-400">
+        CoreBank
+      </NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/" class="rounded px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">
+          Home
         </NuxtLink>
-        <NuxtLink to="/about" class="mt-6 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded transition">
-            About
+        <NuxtLink to="/about" class="rounded px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800">
+          About
         </NuxtLink>
-    </div>
+        <NuxtLink
+          v-if="!isAuthenticated"
+          to="/login"
+          class="rounded bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-emerald-400"
+        >
+          Login
+        </NuxtLink>
+        <button
+          v-else
+          type="button"
+          class="rounded bg-red-500 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-400"
+          @click="handleLogout"
+        >
+          Logout
+        </button>
+      </div>
+    </nav>
+  </header>
 </template>
-
-<script setup lang="ts">
-const { locale } = useI18n()
-const switchLocalePath = useSwitchLocalePath()
-// INDISPENSABLE : On importe useLocalePath pour que les liens Home et About fonctionnent dans toutes les langues
-const localePath = useLocalePath() 
-</script>
