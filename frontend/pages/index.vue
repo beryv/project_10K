@@ -50,9 +50,9 @@
 
         <section class="balance-panel" aria-label="Total balance">
           <div class="balance-main">
-            <div class="balance-label"><span class="balance-spark"><Icon name="mdi:chart-line-variant" /></span> TOTAL BALANCE <span class="balance-period">ACROSS {{ accounts.length }} ACCOUNTS</span></div>
+            <div class="balance-label"><span class="balance-spark"><Icon name="mdi:chart-line-variant" /></span> NET BALANCE <span class="balance-period">AFTER DEBT</span></div>
             <div v-if="pending" class="balance-value loading-value">Loading balance…</div>
-            <div v-else class="balance-value">{{ money(totalBalance) }}</div>
+            <div v-else class="balance-value" :class="{ 'negative-balance': totalBalance < 0 }">{{ money(totalBalance) }}</div>
             <div class="balance-footnote"><span class="positive-mark"><Icon name="mdi:arrow-top-right" /></span> Your accounts are up to date</div>
           </div>
           <div class="balance-divider"></div>
@@ -64,13 +64,17 @@
             <span class="stat-icon outgoing"><Icon name="mdi:arrow-top-right" /></span>
             <div><span class="stat-label">Money out</span><strong>{{ money(totalOutgoing) }}</strong><small>This month</small></div>
           </div>
+          <div class="balance-stat debt-stat">
+            <span class="stat-icon debt-icon"><Icon name="mdi:scale-balance" /></span>
+            <div><span class="stat-label">Total debt</span><strong class="negative-debt">−{{ money(totalDebt) }}</strong><small>Loans + credit cards</small></div>
+          </div>
           <div class="balance-pattern" aria-hidden="true"></div>
         </section>
 
         <section class="quick-actions" aria-label="Quick actions">
           <button class="action-button action-primary" type="button" @click="openAction('deposit')"><span class="action-icon"><Icon name="mdi:arrow-down-left" /></span><span>Add money</span></button>
           <button class="action-button" type="button" @click="openAction('payment')"><span class="action-icon"><Icon name="mdi:arrow-up-right" /></span><span>Pay someone</span></button>
-          <button class="action-button" type="button" :disabled="accounts.length < 2" @click="openAction('transfer')"><span class="action-icon"><Icon name="mdi:swap-horizontal" /></span><span>Move between accounts</span></button>
+          <button class="action-button" type="button" :disabled="activeAccounts.length < 2" @click="openAction('transfer')"><span class="action-icon"><Icon name="mdi:swap-horizontal" /></span><span>Move between accounts</span></button>
           <span class="action-note"><Icon name="mdi:lock-outline" /> All activity is simulated</span>
         </section>
 
@@ -81,11 +85,16 @@
           </div>
           <div v-if="pending" class="account-grid"><div v-for="index in 2" :key="index" class="account-card skeleton-card"></div></div>
           <div v-else-if="accounts.length" class="account-grid">
-            <article v-for="account in accounts" :key="account.id" class="account-card" :class="accountTone(account.account_type)">
+            <article v-for="account in accounts" :key="account.id" class="account-card" :class="[accountTone(account.account_type), { 'closed-account': account.status === 'Closed' }]">
               <div class="account-card-top">
                 <span class="account-icon"><Icon :name="accountIcon(account.account_type)" /></span>
                 <span class="account-kind">{{ accountLabel(account.account_type) }}</span>
-                <button class="more-button" type="button" :aria-label="`More options for ${accountLabel(account.account_type)}`"><Icon name="mdi:dots-horizontal" /></button>
+                <span v-if="account.status === 'Closed'" class="account-status">Closed</span>
+                <button class="more-button" type="button" :aria-label="`More options for ${accountLabel(account.account_type)}`" :aria-expanded="accountMenuId === account.id" @click.stop="toggleAccountMenu(account.id)"><Icon name="mdi:dots-horizontal" /></button>
+                <div v-if="accountMenuId === account.id" class="account-menu" role="menu">
+                  <button type="button" role="menuitem" @click="copyAccountNumber(account)"><Icon name="mdi:content-copy" /> Copy account number</button>
+                  <button type="button" role="menuitem" :disabled="account.status === 'Closed'" @click="openCloseAccountDialog(account)"><Icon name="mdi:close-circle-outline" /> Close account</button>
+                </div>
               </div>
               <p class="account-balance">{{ money(account.balance) }}</p>
               <div class="account-card-bottom"><span>ACCOUNT NUMBER</span><span>•••• {{ account.account_number.slice(-4) }}</span></div>
@@ -97,7 +106,7 @@
         <section id="cards" class="section-block cards-section">
           <div class="section-heading">
             <div><p class="eyebrow">PAYMENTS, YOUR WAY</p><h2>Virtual cards <span class="count-badge">{{ cards.length }}</span></h2></div>
-            <button class="text-link" type="button" :disabled="accounts.length === 0" @click="openAction('card')"><Icon name="mdi:plus" /> Create card</button>
+            <button class="text-link" type="button" :disabled="activeAccounts.length === 0" @click="openAction('card')"><Icon name="mdi:plus" /> Create card</button>
           </div>
           <div v-if="pending" class="card-grid"><div v-for="index in 2" :key="index" class="virtual-card skeleton-card"></div></div>
           <div v-else-if="cards.length" class="card-grid">
@@ -114,7 +123,10 @@
                 <strong v-if="card.card_type === 'Credit'">{{ money(Number(card.credit_limit) - Number(card.outstanding_balance)) }} available</strong>
                 <strong v-else>Purchase limit {{ money(card.spending_limit) }}</strong>
               </div>
-              <div v-if="card.card_type === 'Credit'" class="credit-balance-row"><span>Outstanding balance</span><strong>{{ money(card.outstanding_balance) }}</strong></div>
+              <template v-if="card.card_type === 'Credit'">
+                <div class="credit-balance-row"><span>Outstanding balance</span><strong class="negative-debt">−{{ money(card.outstanding_balance) }}</strong></div>
+                <div class="credit-balance-row"><span>Annual rate</span><strong>{{ Number(card.annual_interest_rate).toFixed(2) }}% APR</strong></div>
+              </template>
               <div class="card-actions">
                 <button type="button" @click="openCardDetails(card)"><Icon name="mdi:eye-outline" /> View details</button>
                 <button type="button" :disabled="card.status === 'Closed'" @click="openAction('cardPurchase', card)"><Icon name="mdi:cart-outline" /> Purchase</button>
@@ -125,14 +137,38 @@
               </div>
             </article>
           </div>
-          <div v-else class="card-empty-state"><span class="card-empty-icon"><Icon name="mdi:credit-card-plus-outline" /></span><strong>No virtual cards yet</strong><span>Create a debit card for everyday spending or a credit card for simulated purchases.</span><button class="text-link" type="button" :disabled="accounts.length === 0" @click="openAction('card')">Create your first card <Icon name="mdi:arrow-right" /></button></div>
+          <div v-else class="card-empty-state"><span class="card-empty-icon"><Icon name="mdi:credit-card-plus-outline" /></span><strong>No virtual cards yet</strong><span>Create a debit card for everyday spending or a credit card for simulated purchases.</span><button class="text-link" type="button" :disabled="activeAccounts.length === 0" @click="openAction('card')">Create your first card <Icon name="mdi:arrow-right" /></button></div>
 
           <div v-if="cardTransactions.length" class="card-activity">
             <div class="card-activity-heading"><h3>Card activity</h3><span>Latest simulated purchases and payments</span></div>
             <div v-for="activity in cardTransactions.slice(0, 4)" :key="activity.id" class="card-activity-row">
               <span class="card-activity-icon" :class="activity.transaction_type.toLowerCase()"><Icon :name="activity.transaction_type === 'Payment' ? 'mdi:arrow-bottom-left' : 'mdi:shopping-outline'" /></span>
               <span class="card-activity-copy"><strong>{{ activity.merchant }}</strong><small>{{ cardById(activity.card_id)?.card_type || 'Virtual' }} card · {{ dateLabel(activity.timestamp) }}</small></span>
-              <strong class="card-activity-amount" :class="activity.transaction_type === 'Payment' ? 'amount-positive' : 'amount-negative'">{{ activity.transaction_type === 'Payment' ? '+' : '' }}{{ money(activity.amount) }}</strong>
+              <strong class="card-activity-amount" :class="activity.transaction_type === 'Payment' ? 'amount-positive' : 'amount-negative'">{{ activity.transaction_type === 'Payment' ? '+' : activity.transaction_type === 'Interest' ? '+' : '−' }}{{ money(activity.amount) }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="debts" class="section-block debts-section">
+          <div class="section-heading">
+            <div><p class="eyebrow">LIABILITIES</p><h2>Debts <span class="count-badge">{{ debts.filter((debt) => debt.status === 'Active').length }}</span></h2></div>
+            <button class="text-link" type="button" @click="openAction('debt')"><Icon name="mdi:plus" /> Record debt</button>
+          </div>
+          <div v-if="debts.length" class="debt-grid">
+            <article v-for="debt in debts" :key="debt.id" class="debt-card" :class="{ 'paid-debt': debt.status === 'Paid' }">
+              <div class="debt-card-head"><span class="debt-kind-icon"><Icon name="mdi:receipt-text-outline" /></span><span class="debt-status">{{ debt.status }}</span></div>
+              <h3>{{ debt.description }}</h3>
+              <div class="debt-card-balance"><span>Outstanding</span><strong :class="Number(debt.balance) > 0 ? 'negative-debt' : 'amount-positive'">−{{ money(debt.balance) }}</strong></div>
+              <div class="debt-card-footer"><span>{{ Number(debt.annual_interest_rate).toFixed(2) }}% APR</span><button type="button" :disabled="debt.status !== 'Active' || activeAccounts.length === 0" @click="openAction('debtPayment', undefined, debt)"><Icon name="mdi:cash-check" /> Make payment</button></div>
+            </article>
+          </div>
+          <div v-else class="debt-empty-state"><span class="debt-kind-icon"><Icon name="mdi:scale-balance" /></span><strong>No personal debts recorded</strong><span>Credit-card balances are included in your total debt automatically.</span></div>
+          <div v-if="debtTransactions.length" class="debt-activity">
+            <div class="card-activity-heading"><h3>Debt activity</h3><span>Payments and monthly interest</span></div>
+            <div v-for="activity in debtTransactions.slice(0, 4)" :key="activity.id" class="card-activity-row">
+              <span class="card-activity-icon" :class="activity.transaction_type.toLowerCase()"><Icon :name="activity.transaction_type === 'Interest' ? 'mdi:percent-outline' : 'mdi:cash-check'" /></span>
+              <span class="card-activity-copy"><strong>{{ activity.description }}</strong><small>{{ debtById(activity.debt_id)?.description || 'Debt' }} · {{ dateLabel(activity.timestamp) }}</small></span>
+              <strong class="card-activity-amount" :class="activity.transaction_type === 'Interest' ? 'amount-negative' : 'amount-positive'">{{ activity.transaction_type === 'Interest' ? '+' : '−' }}{{ money(activity.amount) }}</strong>
             </div>
           </div>
         </section>
@@ -172,10 +208,22 @@
         <p class="modal-description">{{ modalDescription }}</p>
 
         <form class="action-form" @submit.prevent="submitAction">
-          <template v-if="activeAction === 'card'">
+          <template v-if="activeAction === 'debt'">
+            <label>Debt name<input v-model.trim="debtForm.description" type="text" maxlength="120" placeholder="Personal loan" required /></label>
+            <label>Starting balance<div class="amount-input"><span>$</span><input v-model="debtForm.initial_balance" type="number" min="0.01" max="1000000" step="0.01" placeholder="0.00" required /></div></label>
+            <label>Annual interest rate<div class="rate-input"><input v-model="debtForm.annual_interest_rate" type="number" min="0" max="100" step="0.01" required /><span>% APR</span></div></label>
+            <p class="modal-notice"><Icon name="mdi:information-outline" /> Interest is added once per completed month and included in your negative net balance.</p>
+          </template>
+          <template v-else-if="activeAction === 'debtPayment'">
+            <p class="selected-card-note"><Icon name="mdi:receipt-text-outline" /> {{ selectedDebt?.description }} · −{{ money(selectedDebt?.balance || 0) }}</p>
+            <label>Pay from<select v-model.number="debtPaymentAccountId" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+            <label>Payment amount<div class="amount-input"><span>$</span><input v-model="amountValue" type="number" min="0.01" :max="selectedDebt?.balance || 0" step="0.01" placeholder="0.00" required /></div></label>
+          </template>
+          <template v-else-if="activeAction === 'card'">
             <label>Card type<select v-model="cardForm.card_type"><option value="Debit">Debit card</option><option value="Credit">Credit card</option></select></label>
-            <label>Link to account<select v-model.number="cardForm.account_id" required><option v-for="account in accounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+            <label>Link to account<select v-model.number="cardForm.account_id" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
             <label v-if="cardForm.card_type === 'Credit'">Credit limit<div class="amount-input"><span>$</span><input v-model="cardForm.credit_limit" type="number" min="100" max="50000" step="100" required /></div></label>
+            <label v-if="cardForm.card_type === 'Credit'">Annual interest rate<div class="rate-input"><input v-model="cardForm.annual_interest_rate" type="number" min="0" max="100" step="0.01" required /><span>% APR</span></div></label>
             <label>Maximum per purchase<div class="amount-input"><span>$</span><input v-model="cardForm.spending_limit" type="number" min="0.01" max="1000000" step="0.01" required /></div></label>
             <p class="modal-notice"><Icon name="mdi:shield-check-outline" /> This simulator stores no full card number or security code. Card details are fictional.</p>
           </template>
@@ -191,7 +239,7 @@
           </template>
           <template v-else-if="activeAction === 'cardPayment'">
             <p class="selected-card-note"><Icon name="mdi:credit-card-outline" /> Pay {{ selectedCard?.card_type }} ·•••• {{ selectedCard?.last_four }} · {{ money(selectedCard?.outstanding_balance || 0) }} owed</p>
-            <label>Pay from<select v-model.number="cardPaymentAccountId" required><option v-for="account in accounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+            <label>Pay from<select v-model.number="cardPaymentAccountId" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
             <label>Payment amount<div class="amount-input"><span>$</span><input v-model="amountValue" type="number" min="0.01" :max="selectedCard?.outstanding_balance || 0" step="0.01" placeholder="0.00" required /></div></label>
           </template>
           <template v-else-if="activeAction === 'account'">
@@ -199,11 +247,11 @@
             <div class="modal-notice"><Icon name="mdi:information-outline" /> This account will be created with a zero balance.</div>
           </template>
           <template v-else>
-            <label v-if="activeAction !== 'transfer'">{{ activeAction === 'payment' ? 'Pay from' : 'Deposit to' }}<select v-model.number="singleAccountId" required><option v-for="account in accounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+            <label v-if="activeAction !== 'transfer'">{{ activeAction === 'payment' ? 'Pay from' : 'Deposit to' }}<select v-model.number="singleAccountId" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
             <template v-else>
-              <label>From<select v-model.number="transferForm.source_account_id" required><option v-for="account in accounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+              <label>From<select v-model.number="transferForm.source_account_id" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
               <button class="swap-accounts" type="button" aria-label="Swap accounts" @click="swapAccounts"><Icon name="mdi:swap-vertical" /></button>
-              <label>To<select v-model.number="transferForm.destination_account_id" required><option v-for="account in accounts" :key="account.id" :value="account.id" :disabled="account.id === transferForm.source_account_id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
+              <label>To<select v-model.number="transferForm.destination_account_id" required><option v-for="account in activeAccounts" :key="account.id" :value="account.id" :disabled="account.id === transferForm.source_account_id">{{ accountLabel(account.account_type) }} · {{ money(account.balance) }}</option></select></label>
             </template>
             <label v-if="activeAction === 'payment'">Recipient<input v-model.trim="paymentForm.recipient" type="text" maxlength="80" placeholder="Name or business" required /></label>
             <label>Amount<div class="amount-input"><span>$</span><input v-model="amountValue" type="number" min="0.01" max="1000000" step="0.01" placeholder="0.00" required /></div></label>
@@ -211,6 +259,23 @@
           </template>
           <p v-if="actionError" class="form-error" role="alert"><Icon name="mdi:alert-circle-outline" /> {{ actionError }}</p>
           <div class="modal-actions"><button class="cancel-button" type="button" @click="closeAction">Cancel</button><button class="submit-button" type="submit" :disabled="isSubmitting"><Icon v-if="isSubmitting" name="mdi:loading" class="spin" />{{ isSubmitting ? 'Processing…' : modalSubmitLabel }}</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div v-if="closingAccount" class="modal-backdrop" @click.self="cancelAccountClosure">
+      <section class="action-modal account-closure-modal" role="dialog" aria-modal="true" aria-labelledby="close-account-title">
+        <div class="modal-topline"><span class="modal-icon"><Icon name="mdi:bank-outline" /></span><button class="icon-button modal-close" type="button" aria-label="Close dialog" @click="cancelAccountClosure"><Icon name="mdi:close" /></button></div>
+        <p class="eyebrow">ACCOUNT CLOSURE</p>
+        <h2 id="close-account-title">Close {{ accountLabel(closingAccount.account_type) }}</h2>
+        <p class="modal-description">Choose where to transfer the remaining balance. This account will be removed from your account list.</p>
+        <div class="closure-balance"><span>Balance to transfer</span><strong>{{ money(closingAccount.balance) }}</strong></div>
+        <form class="action-form" @submit.prevent="submitAccountClosure">
+          <label>Transfer balance to<select v-model.number="closeDestinationId" :disabled="closeDestinations.length === 0" required><option :value="0" disabled>Choose an account</option><option v-for="account in closeDestinations" :key="account.id" :value="account.id">{{ accountLabel(account.account_type) }} · •••• {{ account.account_number.slice(-4) }} · {{ money(account.balance) }}</option></select></label>
+          <p v-if="closeDestinations.length === 0" class="form-error" role="alert">You need another active account to receive the balance.</p>
+          <p v-if="closeAccountError" class="form-error" role="alert"><Icon name="mdi:alert-circle-outline" /> {{ closeAccountError }}</p>
+          <p class="modal-notice"><Icon name="mdi:information-outline" /> Linked virtual cards must be closed first. Closed accounts remain in transaction history but disappear from this list.</p>
+          <div class="modal-actions"><button class="cancel-button" type="button" :disabled="isClosingAccount" @click="cancelAccountClosure">Cancel</button><button class="submit-button" type="submit" :disabled="isClosingAccount || closeDestinations.length === 0"><Icon v-if="isClosingAccount" name="mdi:loading" class="spin" />{{ isClosingAccount ? 'Closing…' : 'Transfer and close' }}</button></div>
         </form>
       </section>
     </div>
@@ -247,6 +312,7 @@ interface BankAccount {
   balance: number
   account_type: string
   client_id: number
+  status: 'Active' | 'Closed'
 }
 
 interface BankTransaction {
@@ -269,16 +335,35 @@ interface VirtualCard {
   spending_limit: number
   credit_limit: number
   outstanding_balance: number
+  annual_interest_rate: number
   account_id: number
+}
+
+interface ClientDebt {
+  id: number
+  description: string
+  balance: number
+  annual_interest_rate: number
+  status: 'Active' | 'Paid'
+  created_at: string
 }
 
 interface CardActivity {
   id: number
   amount: number
-  transaction_type: 'Purchase' | 'Payment'
+  transaction_type: 'Purchase' | 'Payment' | 'Interest'
   merchant: string
   timestamp: string
   card_id: number
+}
+
+interface DebtActivity {
+  id: number
+  amount: number
+  transaction_type: 'Opened' | 'Payment' | 'Interest'
+  description: string
+  timestamp: string
+  debt_id: number
 }
 
 interface CardDetails {
@@ -297,9 +382,11 @@ interface Dashboard {
   transactions: BankTransaction[]
   cards: VirtualCard[]
   card_transactions: CardActivity[]
+  debts: ClientDebt[]
+  debt_transactions: DebtActivity[]
 }
 
-type ActionType = 'deposit' | 'payment' | 'transfer' | 'account' | 'card' | 'cardPurchase' | 'cardPayment' | 'cardControls'
+type ActionType = 'deposit' | 'payment' | 'transfer' | 'account' | 'card' | 'cardPurchase' | 'cardPayment' | 'cardControls' | 'debt' | 'debtPayment'
 
 const { data: dashboard, pending, error, refresh } = await useFetch<Dashboard>('/api/demo/dashboard')
 const activeAction = ref<ActionType | null>(null)
@@ -307,13 +394,18 @@ const isSubmitting = ref(false)
 const actionError = ref('')
 const loadError = computed(() => error.value ? 'Could not reach the demo banking service. Check that the backend is running.' : '')
 const toastMessage = ref('')
+const accountMenuId = ref<number | null>(null)
+const closingAccount = ref<BankAccount | null>(null)
+const closeDestinationId = ref(0)
+const isClosingAccount = ref(false)
+const closeAccountError = ref('')
 const amountValue = ref('')
 const singleAccountId = ref<number>()
 const showAllActivity = ref(false)
 const paymentForm = reactive({ recipient: '' })
 const transferForm = reactive({ source_account_id: 0, destination_account_id: 0 })
 const accountForm = reactive<{ account_type: 'Current' | 'Savings' }>({ account_type: 'Current' })
-const cardForm = reactive<{ account_id: number; card_type: 'Debit' | 'Credit'; spending_limit: string; credit_limit: string }>({ account_id: 0, card_type: 'Debit', spending_limit: '500.00', credit_limit: '1000.00' })
+const cardForm = reactive<{ account_id: number; card_type: 'Debit' | 'Credit'; spending_limit: string; credit_limit: string; annual_interest_rate: string }>({ account_id: 0, card_type: 'Debit', spending_limit: '500.00', credit_limit: '1000.00', annual_interest_rate: '24.99' })
 const cardPurchaseForm = reactive({ merchant: '' })
 const cardControlsForm = reactive({ spending_limit: '' })
 const cardPaymentAccountId = ref(0)
@@ -323,16 +415,28 @@ const isLoadingCardDetails = ref(false)
 const cardDetailsError = ref('')
 const cardDetails = ref<CardDetails | null>(null)
 const detailsCard = ref<VirtualCard | null>(null)
+const selectedDebtId = ref<number | null>(null)
+const debtForm = reactive({ description: '', initial_balance: '', annual_interest_rate: '8.50' })
+const debtPaymentAccountId = ref(0)
 
-const accounts = computed(() => dashboard.value?.accounts ?? [])
+const allAccounts = computed(() => dashboard.value?.accounts ?? [])
+const accounts = computed(() => allAccounts.value.filter((account) => account.status !== 'Closed'))
+const activeAccounts = accounts
+const closeDestinations = computed(() => activeAccounts.value.filter((account) => account.id !== closingAccount.value?.id))
 const transactions = computed(() => dashboard.value?.transactions ?? [])
-const cards = computed(() => dashboard.value?.cards ?? [])
+const allCards = computed(() => dashboard.value?.cards ?? [])
+const cards = computed(() => allCards.value.filter((card) => card.status !== 'Closed'))
+const debts = computed(() => dashboard.value?.debts ?? [])
 const cardTransactions = computed(() => dashboard.value?.card_transactions ?? [])
-const selectedCard = computed(() => cards.value.find((card) => card.id === selectedCardId.value))
+const debtTransactions = computed(() => dashboard.value?.debt_transactions ?? [])
+const selectedCard = computed(() => allCards.value.find((card) => card.id === selectedCardId.value))
+const selectedDebt = computed(() => debts.value.find((debt) => debt.id === selectedDebtId.value))
 const customerName = computed(() => dashboard.value?.client.name || 'Demo Customer')
 const firstName = computed(() => customerName.value.split(' ')[0])
 const initials = computed(() => customerName.value.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase())
-const totalBalance = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.balance), 0))
+const totalAssets = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.balance), 0))
+const totalDebt = computed(() => debts.value.reduce((sum, debt) => sum + Number(debt.balance), 0) + allCards.value.filter((card) => card.card_type === 'Credit').reduce((sum, card) => sum + Number(card.outstanding_balance), 0))
+const totalBalance = computed(() => totalAssets.value - totalDebt.value)
 const currentMonthTransactions = computed(() => transactions.value.filter((transaction) => {
   const transactionDate = new Date(transaction.timestamp)
   const currentDate = new Date()
@@ -346,7 +450,7 @@ const availableAccountTypes = computed(() => {
 })
 const todayLabel = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date()).toUpperCase()
 
-const modalTitle = computed(() => ({ deposit: 'Add money', payment: 'Pay someone', transfer: 'Move money', account: 'Open an account', card: 'Create a virtual card', cardPurchase: 'Simulate a card purchase', cardPayment: 'Pay credit balance', cardControls: 'Card spending controls' }[activeAction.value || 'deposit']))
+const modalTitle = computed(() => ({ deposit: 'Add money', payment: 'Pay someone', transfer: 'Move money', account: 'Open an account', card: 'Create a virtual card', cardPurchase: 'Simulate a card purchase', cardPayment: 'Pay credit balance', cardControls: 'Card spending controls', debt: 'Record a debt', debtPayment: 'Pay down debt' }[activeAction.value || 'deposit']))
 const modalDescription = computed(() => ({
   deposit: 'Simulate an incoming payment to one of your accounts.',
   payment: 'Create a simulated payment to an external recipient.',
@@ -356,9 +460,11 @@ const modalDescription = computed(() => ({
   cardPurchase: 'Simulate a purchase using this virtual card.',
   cardPayment: 'Pay down this card’s balance from one of your accounts.',
   cardControls: 'Set the maximum amount allowed for a single purchase.',
+  debt: 'Record a personal debt with its current balance and annual rate.',
+  debtPayment: 'Pay this debt from one of your active accounts.',
 }[activeAction.value || 'deposit']))
-const modalSubmitLabel = computed(() => ({ deposit: 'Add money', payment: 'Review payment', transfer: 'Transfer funds', account: 'Open account', card: 'Issue card', cardPurchase: 'Simulate purchase', cardPayment: 'Pay balance', cardControls: 'Save controls' }[activeAction.value || 'deposit']))
-const modalIcon = computed(() => ({ deposit: 'mdi:arrow-down-left', payment: 'mdi:arrow-top-right', transfer: 'mdi:swap-horizontal', account: 'mdi:wallet-plus-outline', card: 'mdi:credit-card-plus-outline', cardPurchase: 'mdi:cart-outline', cardPayment: 'mdi:cash-check', cardControls: 'mdi:tune-variant' }[activeAction.value || 'deposit']))
+const modalSubmitLabel = computed(() => ({ deposit: 'Add money', payment: 'Review payment', transfer: 'Transfer funds', account: 'Open account', card: 'Issue card', cardPurchase: 'Simulate purchase', cardPayment: 'Pay balance', cardControls: 'Save controls', debt: 'Record debt', debtPayment: 'Pay debt' }[activeAction.value || 'deposit']))
+const modalIcon = computed(() => ({ deposit: 'mdi:arrow-down-left', payment: 'mdi:arrow-top-right', transfer: 'mdi:swap-horizontal', account: 'mdi:wallet-plus-outline', card: 'mdi:credit-card-plus-outline', cardPurchase: 'mdi:cart-outline', cardPayment: 'mdi:cash-check', cardControls: 'mdi:tune-variant', debt: 'mdi:receipt-text-outline', debtPayment: 'mdi:cash-check' }[activeAction.value || 'deposit']))
 
 function money(value: number | string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0))
@@ -379,12 +485,65 @@ function accountIcon(type: string) {
   return type.toLowerCase() === 'savings' ? 'mdi:bank-outline' : 'mdi:credit-card-outline'
 }
 
+function toggleAccountMenu(accountId: number) {
+  accountMenuId.value = accountMenuId.value === accountId ? null : accountId
+}
+
+async function copyAccountNumber(account: BankAccount) {
+  accountMenuId.value = null
+  try {
+    await navigator.clipboard.writeText(account.account_number)
+    toastMessage.value = 'Account number copied'
+  } catch {
+    toastMessage.value = 'Clipboard access is unavailable in this browser.'
+  }
+  window.setTimeout(() => { toastMessage.value = '' }, 2500)
+}
+
+function openCloseAccountDialog(account: BankAccount) {
+  accountMenuId.value = null
+  closingAccount.value = account
+  closeDestinationId.value = closeDestinations.value[0]?.id ?? 0
+  closeAccountError.value = ''
+}
+
+function cancelAccountClosure() {
+  if (isClosingAccount.value) return
+  closingAccount.value = null
+  closeAccountError.value = ''
+}
+
+async function submitAccountClosure() {
+  if (!closingAccount.value || !closeDestinationId.value) return
+  isClosingAccount.value = true
+  closeAccountError.value = ''
+  try {
+    await $fetch(`/api/demo/accounts/${closingAccount.value.id}/close`, {
+      method: 'POST',
+      body: { destination_account_id: closeDestinationId.value },
+    })
+    await refresh()
+    closingAccount.value = null
+    toastMessage.value = 'Balance transferred and account closed'
+  } catch (caughtError: unknown) {
+    const apiError = caughtError as { data?: { detail?: string }; message?: string }
+    closeAccountError.value = apiError.data?.detail || apiError.message || 'Account could not be closed.'
+  } finally {
+    isClosingAccount.value = false
+  }
+  window.setTimeout(() => { toastMessage.value = '' }, 3500)
+}
+
 function accountFor(id: number) {
-  return accounts.value.find((account) => account.id === id)
+  return allAccounts.value.find((account) => account.id === id)
 }
 
 function cardById(id: number) {
-  return cards.value.find((card) => card.id === id)
+  return allCards.value.find((card) => card.id === id)
+}
+
+function debtById(id: number) {
+  return debts.value.find((debt) => debt.id === id)
 }
 
 function expiryLabel(card: VirtualCard | CardDetails) {
@@ -437,22 +596,30 @@ function dateLabel(timestamp: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(timestamp))
 }
 
-function openAction(action: ActionType, card?: VirtualCard) {
+function openAction(action: ActionType, card?: VirtualCard, debt?: ClientDebt) {
   actionError.value = ''
   amountValue.value = ''
   paymentForm.recipient = ''
   cardPurchaseForm.merchant = ''
   selectedCardId.value = card?.id ?? null
-  singleAccountId.value = accounts.value[0]?.id
-  transferForm.source_account_id = accounts.value[0]?.id ?? 0
-  transferForm.destination_account_id = accounts.value[1]?.id ?? 0
+  selectedDebtId.value = debt?.id ?? null
+  singleAccountId.value = activeAccounts.value[0]?.id
+  transferForm.source_account_id = activeAccounts.value[0]?.id ?? 0
+  transferForm.destination_account_id = activeAccounts.value[1]?.id ?? 0
   accountForm.account_type = availableAccountTypes.value[0] ?? 'Current'
-  cardForm.account_id = card?.account_id ?? accounts.value[0]?.id ?? 0
+  const defaultAccountId = activeAccounts.value[0]?.id ?? 0
+  const linkedActiveAccountId = activeAccounts.value.some((account) => account.id === card?.account_id) ? card?.account_id : defaultAccountId
+  cardForm.account_id = linkedActiveAccountId ?? defaultAccountId
   cardForm.card_type = 'Debit'
   cardForm.spending_limit = '500.00'
   cardForm.credit_limit = '1000.00'
+  cardForm.annual_interest_rate = '24.99'
   cardControlsForm.spending_limit = String(card?.spending_limit ?? '')
-  cardPaymentAccountId.value = card?.account_id ?? accounts.value[0]?.id ?? 0
+  cardPaymentAccountId.value = linkedActiveAccountId ?? defaultAccountId
+  debtPaymentAccountId.value = defaultAccountId
+  debtForm.description = ''
+  debtForm.initial_balance = ''
+  debtForm.annual_interest_rate = '8.50'
   activeAction.value = action
 }
 
@@ -473,8 +640,13 @@ async function submitAction() {
   isSubmitting.value = true
   actionError.value = ''
   try {
-    if (activeAction.value === 'card') {
-      await $fetch('/api/demo/cards', { method: 'POST', body: { ...cardForm, spending_limit: Number(cardForm.spending_limit), credit_limit: Number(cardForm.credit_limit) } })
+    if (activeAction.value === 'debt') {
+      await $fetch('/api/demo/debts', { method: 'POST', body: { ...debtForm, initial_balance: Number(debtForm.initial_balance), annual_interest_rate: Number(debtForm.annual_interest_rate) } })
+    } else if (activeAction.value === 'debtPayment') {
+      if (!selectedDebt.value) throw new Error('Select a debt first.')
+      await $fetch(`/api/demo/debts/${selectedDebt.value.id}/payments`, { method: 'POST', body: { account_id: debtPaymentAccountId.value, amount: Number(amountValue.value) } })
+    } else if (activeAction.value === 'card') {
+      await $fetch('/api/demo/cards', { method: 'POST', body: { ...cardForm, spending_limit: Number(cardForm.spending_limit), credit_limit: Number(cardForm.credit_limit), annual_interest_rate: Number(cardForm.annual_interest_rate) } })
     } else if (activeAction.value === 'cardPurchase') {
       if (!selectedCard.value) throw new Error('Select a virtual card first.')
       await $fetch(`/api/demo/cards/${selectedCard.value.id}/purchases`, { method: 'POST', body: { amount: Number(amountValue.value), merchant: cardPurchaseForm.merchant } })
@@ -502,6 +674,8 @@ async function submitAction() {
       cardPurchase: 'Simulated purchase complete',
       cardPayment: 'Credit balance payment complete',
       cardControls: 'Card controls updated',
+      debt: 'Debt recorded',
+      debtPayment: 'Debt payment complete',
     }
     toastMessage.value = successMessages[activeAction.value]
     activeAction.value = null
@@ -603,6 +777,7 @@ h1 { margin-bottom: 5px; font-family: Georgia, 'Times New Roman', serif; font-si
 .balance-spark { display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid rgba(207,229,216,.24); border-radius: 5px; color: #c8dfd1; font-size: 14px; }
 .balance-period { margin-left: 4px; color: #89a79a; font-size: 8px; letter-spacing: .65px; }
 .balance-value { margin: 13px 0 9px; font-family: Georgia, 'Times New Roman', serif; font-size: 37px; font-weight: 400; letter-spacing: 0; }
+.negative-balance { color: #f0c4a4; }
 .loading-value { color: #a7bcb2; font-size: 23px; }
 .balance-footnote { display: flex; align-items: center; gap: 5px; color: #a6beb1; font-size: 10px; }
 .positive-mark { display: grid; width: 15px; height: 15px; place-items: center; border-radius: 50%; background: rgba(160,211,176,.18); color: #a9d8b4; font-size: 12px; }
@@ -615,6 +790,8 @@ h1 { margin-bottom: 5px; font-family: Georgia, 'Times New Roman', serif; font-si
 .stat-label { color: #afc4b8; font-size: 10px; }
 .balance-stat strong { font-size: 15px; font-weight: 700; }
 .balance-stat small { color: #85a195; font-size: 9px; }
+.debt-icon { background: rgba(221,162,131,.16); color: #e9b69b; }
+.balance-stat .negative-debt { color: #edb69a; }
 .balance-pattern { position: absolute; top: -75px; right: -45px; width: 300px; height: 300px; border: 1px solid rgba(219,239,224,.08); border-radius: 50%; box-shadow: 0 0 0 25px rgba(219,239,224,.025), 0 0 0 55px rgba(219,239,224,.02), 0 0 0 90px rgba(219,239,224,.016); }
 .quick-actions { display: flex; align-items: center; gap: 10px; margin: 15px 0 32px; }
 .action-button { display: flex; min-height: 49px; align-items: center; gap: 10px; border: 1px solid #e3e8e3; border-radius: 6px; background: #fff; padding: 0 14px 0 10px; color: #394741; font-size: 11px; font-weight: 700; cursor: pointer; transition: border-color .15s, transform .15s, background .15s; }
@@ -636,14 +813,23 @@ h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-family: Georg
 .text-link:disabled { cursor: not-allowed; opacity: .45; }
 .text-link .icon { font-size: 15px; }
 .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
-.account-card { min-width: 0; min-height: 151px; border: 1px solid #e6e9e5; border-radius: 7px; background: #fff; padding: 17px 18px 14px; }
+.account-card { position: relative; min-width: 0; min-height: 151px; border: 1px solid #e6e9e5; border-radius: 7px; background: #fff; padding: 17px 18px 14px; }
 .account-card.savings-card { background: #fff; }
-.account-card-top { display: flex; align-items: center; gap: 9px; }
+.account-card-top { position: relative; display: flex; align-items: center; gap: 9px; }
+.closed-account { background: #f4f6f3; }
+.closed-account .account-balance { color: #7f8983; }
+.account-status { margin-left: auto; border-radius: 10px; background: #ecefeb; padding: 4px 7px; color: #79827d; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .account-icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 7px; background: #eaf3ee; color: #36775e; font-size: 18px; }
 .savings-card .account-icon { background: #f7efe4; color: #a87945; }
 .account-kind { color: #52615a; font-size: 11px; font-weight: 700; }
 .more-button { display: grid; width: 28px; height: 28px; place-items: center; margin-left: auto; border: 0; border-radius: 4px; background: transparent; color: #8b9690; cursor: pointer; font-size: 19px; }
 .more-button:hover { background: #f2f5f2; }
+.account-menu { position: absolute; top: 34px; right: 0; z-index: 8; display: grid; min-width: 190px; gap: 2px; border: 1px solid #e2e8e2; border-radius: 6px; background: #fff; padding: 5px; box-shadow: 0 9px 24px rgba(31,55,43,.14); }
+.account-menu button { display: flex; min-height: 34px; align-items: center; gap: 8px; border: 0; border-radius: 4px; background: transparent; padding: 0 8px; color: #52615a; font-size: 10px; text-align: left; cursor: pointer; }
+.account-menu button:hover { background: #f1f6f2; color: #28614b; }
+.account-menu button:disabled { cursor: not-allowed; opacity: .45; }
+.account-menu button:last-child:not(:disabled) { color: #9c6255; }
+.account-menu .icon { font-size: 15px; }
 .account-balance { margin: 15px 0 13px; font-family: Georgia, 'Times New Roman', serif; font-size: 25px; letter-spacing: 0; }
 .account-card-bottom { display: flex; justify-content: space-between; border-top: 1px solid #eff1ee; padding-top: 10px; color: #8b9690; font-size: 8px; font-weight: 700; letter-spacing: .75px; }
 .account-card-bottom span:last-child { color: #52615a; font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif; font-size: 9px; letter-spacing: 1.3px; }
@@ -717,6 +903,33 @@ h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-family: Georg
 .detail-copy:hover { border-color: #aac7b8; background: #f3f8f4; }
 .detail-status { border-radius: 12px; background: #e6f3e9; padding: 5px 8px; color: #397153 !important; font-size: 8px !important; font-weight: 800; text-transform: uppercase; }
 .activity-section { margin-top: 36px; }
+.debts-section { margin-top: 36px; }
+.debt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.debt-card { min-width: 0; border: 1px solid #e6e9e5; border-radius: 7px; background: #fff; padding: 15px; }
+.debt-card.paid-debt { background: #f5f7f4; }
+.debt-card-head { display: flex; align-items: center; justify-content: space-between; }
+.debt-kind-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; background: #f8eee9; color: #a9674d; font-size: 17px; }
+.debt-status { border-radius: 10px; background: #e8f2ea; padding: 4px 8px; color: #53745e; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.paid-debt .debt-status { background: #ecefeb; color: #78817b; }
+.debt-card h3 { overflow: hidden; margin: 11px 0 15px; color: #394840; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.debt-card-balance { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.debt-card-balance > span { color: #87918c; font-size: 9px; }
+.debt-card-balance strong { font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: 400; }
+.negative-debt { color: #a45d48; }
+.debt-card-balance .amount-positive { color: #27805f; }
+.debt-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 13px; border-top: 1px solid #eff1ee; padding-top: 10px; }
+.debt-card-footer > span { color: #7c8981; font-size: 9px; font-weight: 700; }
+.debt-card-footer button { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; border: 1px solid #e2e8e2; border-radius: 5px; background: #fff; padding: 0 8px; color: #4d7060; font-size: 9px; font-weight: 700; cursor: pointer; }
+.debt-card-footer button:disabled { cursor: not-allowed; opacity: .45; }
+.debt-empty-state { display: grid; justify-items: center; gap: 8px; border: 1px dashed #d4ddd6; border-radius: 7px; padding: 22px; color: #87918c; text-align: center; }
+.debt-empty-state strong { color: #4b5b53; font-size: 12px; }
+.debt-empty-state > span:last-child { font-size: 10px; }
+.debt-activity { margin-top: 14px; border: 1px solid #e6e9e5; border-radius: 7px; background: #fff; padding: 13px 15px 2px; }
+.card-activity-icon.interest { background: #fff2df; color: #9d6a2f; }
+.rate-input { display: flex; min-height: 42px; align-items: center; border: 1px solid #dfe5df; border-radius: 5px; background: #fff; padding-right: 10px; }
+.rate-input:focus-within { border-color: #6b9e85; box-shadow: 0 0 0 3px #e9f3ed; }
+.rate-input input { min-width: 0; border: 0; background: transparent; box-shadow: none !important; }
+.rate-input > span { color: #78857e; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .activity-heading { margin-bottom: 10px; }
 .filter-button { display: flex; align-items: center; gap: 7px; min-height: 32px; border: 1px solid #e2e7e2; border-radius: 5px; background: #fff; padding: 0 9px; color: #68746e; font-size: 10px; cursor: pointer; }
 .filter-button:hover { border-color: #b7cbbd; }
@@ -820,6 +1033,7 @@ h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-family: Georg
   .section-block { margin-top: 27px; }
   .account-grid { gap: 9px; }
   .card-grid { grid-template-columns: 1fr; }
+  .debt-grid { grid-template-columns: 1fr; }
   .virtual-card-face { min-height: 180px; }
   .account-card { min-height: 137px; padding: 12px; }
   .account-balance { font-size: 21px; }

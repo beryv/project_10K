@@ -30,3 +30,34 @@ def initialize_database():
       connection.execute(
           text("ALTER TABLE transactions ADD COLUMN description VARCHAR DEFAULT ''")
       )
+  account_columns = {
+      column["name"] for column in inspect(engine).get_columns("accounts")
+  }
+  if "status" not in account_columns:
+    with engine.begin() as connection:
+      connection.execute(
+          text("ALTER TABLE accounts ADD COLUMN status VARCHAR NOT NULL DEFAULT 'Active'")
+      )
+  card_columns = {
+      column["name"] for column in inspect(engine).get_columns("virtual_cards")
+  }
+  if "annual_interest_rate" not in card_columns:
+    with engine.begin() as connection:
+      connection.execute(
+          text(
+              "ALTER TABLE virtual_cards ADD COLUMN annual_interest_rate "
+              "NUMERIC(5, 2) NOT NULL DEFAULT 24.99"
+          )
+      )
+  if "virtual_cards" in inspect(engine).get_table_names():
+    card_columns = {
+        column["name"] for column in inspect(engine).get_columns("virtual_cards")
+    }
+    if "annual_interest_rate" not in card_columns:
+      with engine.begin() as connection:
+        connection.execute(
+            text(
+                "ALTER TABLE virtual_cards ADD COLUMN annual_interest_rate "
+                "NUMERIC(5, 2) NOT NULL DEFAULT 24.99"
+            )
+        )

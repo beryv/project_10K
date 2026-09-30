@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
@@ -14,20 +15,32 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
-from models import Account, Branch, CardTransaction, Client, Transaction, VirtualCard
+from models import (
+    Account,
+    Branch,
+    CardTransaction,
+    Client,
+    ClientDebt,
+    DebtTransaction,
+    InterestAccrual,
+    Transaction,
+    VirtualCard,
+)
 from schemas import (
     AccountCreate,
     BranchCreate,
     ClientCreate,
-  DemoAccountCreate,
-  DemoDeposit,
-  DemoPayment,
-  DemoTransfer,
+    DemoAccountClose,
+    DemoAccountCreate,
+    DemoDebtCreate,
+    DemoDebtPayment,
+    DemoDeposit,
+    DemoPayment,
+    DemoTransfer,
     TransactionCreate,
 )
 from seed import seed_database
 from sqlalchemy.orm import Session
-from decimal import Decimal
 import secrets
 
 # Initialize database & seeder
@@ -123,6 +136,122 @@ def validate_demo_amount(amount: Decimal):
     raise HTTPException(status_code=400, detail="Amounts can have at most two decimal places")
 
 
+def validate_annual_rate(rate: Decimal):
+  if not rate.is_finite() or rate < 0 or rate > Decimal("100.00"):
+    raise HTTPException(status_code=400, detail="Annual interest rate must be between 0 and 100 percent")
+  if rate.as_tuple().exponent < -2:
+    raise HTTPException(status_code=400, detail="Interest rates can have at most two decimal places")
+
+
+def billing_periods(started_at: datetime, through: date):
+  period = date(started_at.year, started_at.month, 1)
+  last_period = date(through.year, through.month, 1)
+  while period <= last_period:
+    yield period.strftime("%Y-%m")
+    if period.month == 12:
+      period = date(period.year + 1, 1, 1)
+    else:
+      period = date(period.year, period.month + 1, 1)
+
+
+def last_completed_billing_period(now: datetime):
+  if now.month == 1:
+    return date(now.year - 1, 12, 1)
+  return date(now.year, now.month - 1, 1)
+
+
+def accrue_month_end_interest(db: Session, client_id: int, now: datetime | None = None):
+  now = now or datetime.utcnow()
+  through_period = last_completed_billing_period(now)
+  changed = False
+
+  debts = (
+    db.query(ClientDebt)
+    .filter(ClientDebt.client_id == client_id, ClientDebt.status == "Active")
+    .all()
+  )
+  for debt in debts:
+    balance = Decimal(str(debt.balance))
+    rate = Decimal(str(debt.annual_interest_rate))
+    for period in billing_periods(debt.created_at, through_period):
+      exists = (
+        db.query(InterestAccrual.id)
+        .filter_by(subject_type="Debt", subject_id=debt.id, billing_period=period)
+        .first()
+      )
+      if exists:
+        continue
+      interest = (balance * rate / Decimal("1200")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+      )
+      db.add(
+        InterestAccrual(
+          client_id=client_id,
+          subject_type="Debt",
+          subject_id=debt.id,
+          billing_period=period,
+          amount=interest,
+        )
+      )
+      if interest > 0:
+        balance += interest
+        db.add(
+          DebtTransaction(
+            amount=interest,
+            transaction_type="Interest",
+            description=f"Monthly interest for {period}",
+            debt_id=debt.id,
+          )
+        )
+      changed = True
+    debt.balance = balance
+
+  cards = (
+    db.query(VirtualCard)
+    .join(Account, VirtualCard.account_id == Account.id)
+    .filter(Account.client_id == client_id, VirtualCard.card_type == "Credit")
+    .all()
+  )
+  for card in cards:
+    balance = Decimal(str(card.outstanding_balance))
+    rate = Decimal(str(card.annual_interest_rate))
+    for period in billing_periods(card.created_at, through_period):
+      exists = (
+        db.query(InterestAccrual.id)
+        .filter_by(subject_type="CreditCard", subject_id=card.id, billing_period=period)
+        .first()
+      )
+      if exists:
+        continue
+      interest = (balance * rate / Decimal("1200")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+      )
+      db.add(
+        InterestAccrual(
+          client_id=client_id,
+          subject_type="CreditCard",
+          subject_id=card.id,
+          billing_period=period,
+          amount=interest,
+        )
+      )
+      if interest > 0:
+        balance += interest
+        db.add(
+          CardTransaction(
+            amount=interest,
+            transaction_type="Interest",
+            merchant=f"Monthly interest · {period}",
+            card_id=card.id,
+          )
+        )
+      changed = True
+    card.outstanding_balance = balance
+
+  if changed:
+    db.commit()
+
+
 def get_demo_account(db: Session, client_id: int, account_id: int):
   account = (
       db.query(Account)
@@ -131,6 +260,8 @@ def get_demo_account(db: Session, client_id: int, account_id: int):
   )
   if not account:
     raise HTTPException(status_code=404, detail="Account not found")
+  if account.status != "Active":
+    raise HTTPException(status_code=409, detail="Account is closed")
   return account
 
 
@@ -138,6 +269,7 @@ def get_demo_account(db: Session, client_id: int, account_id: int):
 def get_demo_dashboard(db: Session = Depends(get_db)):
   """Return the seeded demo customer's accounts and recent activity."""
   client = get_demo_client(db)
+  accrue_month_end_interest(db, client.id)
   accounts = db.query(Account).filter(Account.client_id == client.id).all()
   account_ids = [account.id for account in accounts]
   transactions = (
@@ -161,12 +293,28 @@ def get_demo_dashboard(db: Session = Depends(get_db)):
       .limit(20)
       .all()
   ) if card_ids else []
+  debts = (
+      db.query(ClientDebt)
+      .filter(ClientDebt.client_id == client.id)
+      .order_by(ClientDebt.created_at.desc(), ClientDebt.id.desc())
+      .all()
+  )
+  debt_ids = [debt.id for debt in debts]
+  debt_transactions = (
+      db.query(DebtTransaction)
+      .filter(DebtTransaction.debt_id.in_(debt_ids))
+      .order_by(DebtTransaction.timestamp.desc(), DebtTransaction.id.desc())
+      .limit(30)
+      .all()
+  ) if debt_ids else []
   return {
       "client": client,
       "accounts": accounts,
       "transactions": transactions,
       "cards": cards,
       "card_transactions": card_transactions,
+      "debts": debts,
+      "debt_transactions": debt_transactions,
   }
 
 
@@ -185,6 +333,61 @@ def open_demo_account(payload: DemoAccountCreate, db: Session = Depends(get_db))
   db.commit()
   db.refresh(account)
   return account
+
+
+@app.post("/demo/accounts/{account_id}/close", tags=["Demo Banking"])
+def close_demo_account(
+    account_id: int,
+    payload: DemoAccountClose,
+    db: Session = Depends(get_db),
+):
+  client = get_demo_client(db)
+  account = get_demo_account(db, client.id, account_id)
+  if account_id == payload.destination_account_id:
+    raise HTTPException(status_code=400, detail="Choose a different destination account")
+  destination = get_demo_account(db, client.id, payload.destination_account_id)
+  balance = Decimal(str(account.balance))
+  if balance < 0:
+    raise HTTPException(
+        status_code=409,
+        detail="An account with a negative balance cannot be closed",
+    )
+  linked_card = (
+      db.query(VirtualCard)
+      .filter(VirtualCard.account_id == account.id, VirtualCard.status != "Closed")
+      .first()
+  )
+  if linked_card:
+    raise HTTPException(
+        status_code=409,
+        detail="Close the virtual cards linked to this account first",
+    )
+  if balance > 0:
+      destination.balance = Decimal(str(destination.balance)) + balance
+      account.balance = Decimal("0.00")
+      db.add_all([
+          Transaction(
+              amount=balance,
+              transaction_type="Transfer out",
+              description=f"Final balance transferred to {destination.account_type.lower()} account",
+              account_id=account.id,
+          ),
+          Transaction(
+              amount=balance,
+              transaction_type="Transfer in",
+              description=f"Final balance received from {account.account_type.lower()} account",
+              account_id=destination.id,
+          ),
+      ])
+  account.status = "Closed"
+  db.commit()
+  return {
+      "message": "Account closed",
+      "account_id": account.id,
+      "destination_account_id": destination.id,
+      "transferred_amount": balance,
+      "status": account.status,
+  }
 
 
 @app.post("/demo/deposits", tags=["Demo Banking"])

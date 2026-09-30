@@ -30,6 +30,10 @@ class DemoAccountCreate(BaseModel):
   account_type: Literal["Current", "Savings"]
 
 
+class DemoAccountClose(BaseModel):
+  destination_account_id: int
+
+
 class DemoDeposit(BaseModel):
   account_id: int
   amount: Decimal
@@ -52,6 +56,7 @@ class DemoCardCreate(BaseModel):
   card_type: Literal["Debit", "Credit"]
   spending_limit: Decimal = Decimal("500.00")
   credit_limit: Decimal = Decimal("1000.00")
+  annual_interest_rate: Decimal = Decimal("24.99")
 
 
 class DemoCardStatusUpdate(BaseModel):
@@ -68,5 +73,16 @@ class DemoCardPurchase(BaseModel):
 
 
 class DemoCardPayment(BaseModel):
+  account_id: int
+  amount: Decimal
+
+
+class DemoDebtCreate(BaseModel):
+  description: str
+  initial_balance: Decimal
+  annual_interest_rate: Decimal = Decimal("8.50")
+
+
+class DemoDebtPayment(BaseModel):
   account_id: int
   amount: Decimal
