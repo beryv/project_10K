@@ -2,7 +2,7 @@
   <AppHeader></AppHeader>
   <div class="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
     <h1 class="text-5xl font-bold text-emerald-400 mb-4">
-      Mon Projet Nuxt 3
+      {{ $t('welcome') }}
     </h1>
     <div>
       <h1>List of all accounts</h1>
@@ -16,7 +16,6 @@
 </template> 
 
 <script setup lang=ts>
-
 // Fetch all accounts from the api
 const { data } = await useFetch('/api/accounts')
 
