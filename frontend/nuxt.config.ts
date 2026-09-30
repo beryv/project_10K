@@ -6,6 +6,7 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@nuxt/icon',
   ],
+  css: ['~/assets/css/kbc-pulse.css'],
   icon: {
     serverBundle: {
       collections: ['mdi']
