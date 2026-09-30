@@ -1,4 +1,11 @@
 {
   "welcome": "Bienvenue sur mon application",
-  "switch_lang": "Passer en Anglais"
+  "switch_lang": "Passer en Anglais",
+  "login": "Connexion",
+  "logout": "Déconnexion",
+  "username": "Nom d'utilisateur",
+  "password": "Mot de passe",
+  "logging_in": "Connexion en cours...",
+  "login_error": "Identifiants incorrects ou erreur de connexion.",
+  "close": "Fermer"
 }

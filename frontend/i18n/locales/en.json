@@ -1,4 +1,11 @@
 {
   "welcome": "Welcome to my application",
-  "switch_lang": "Switch to French"
+  "switch_lang": "Switch to French",
+  "login": "Log in",
+  "logout": "Log out",
+  "username": "Username",
+  "password": "Password",
+  "logging_in": "Signing in...",
+  "login_error": "Invalid credentials or connection error.",
+  "close": "Close"
 }
