@@ -1,36 +1,32 @@
-# Aster Bank Simulator
+# KBC Pulse AI Demo
 
-A fictional banking sandbox built with FastAPI, SQLite, and Nuxt. Use it to explore current and savings accounts, incoming payments, outgoing payments, internal transfers, and account activity. It does not connect to a bank or move real money.
+A Nuxt and FastAPI demonstration backed by MariaDB. It loads the seeded KBC client profiles, financial summaries, transactions, payments, loans, insurances, investments, and AI nudges from `backend/kbc_pulse.sql`. All financial content is fictional and all recommendation actions are for demonstration only.
 
-## Run locally
+## Start the database and API
 
-Start the backend from the `backend` directory:
-
-```powershell
-py -3 -m uvicorn demo_api:app --host 0.0.0.0 --reload --port 8000
-```
-
-Start the frontend from the `frontend` directory:
+From the project root:
 
 ```powershell
-npm install
-npm run dev -- --host 0.0.0.0
+docker compose -f backend/docker-compose.yml up --build -d
 ```
 
-Open `http://localhost:3000`. The backend API and interactive docs are available at `http://localhost:8000` and `http://localhost:8000/docs`.
+MariaDB initializes `backend/kbc_pulse.sql` when its data volume is first created. The script drops and recreates its KBC tables, so it is only mounted as an initialization script; Docker will not rerun it on an existing `mariadb_data` volume. The compose file uses development-only default credentials. Override `MARIADB_ROOT_PASSWORD` and `MARIADB_PASSWORD` for non-local environments.
 
-## Demo workflows
+The API and OpenAPI docs are available at `http://localhost:8000` and `http://localhost:8000/docs`. Check the DB connection at `http://localhost:8000/health`.
 
-- Open current or savings accounts for the seeded demo customer.
-- Use each account’s options menu to copy its number or close it; closing transfers its remaining balance to another active account, and linked cards must be closed first.
-- Simulate incoming deposits, payments to a named recipient, and transfers between owned accounts.
-- Issue virtual debit and credit cards linked to an account, then freeze, unfreeze, or close them.
-- Record personal debts with an APR and repay them from active accounts; liabilities reduce the displayed net balance.
-- Set per-purchase limits and APRs, simulate credit-card purchases, and pay down card balances. Interest is compounded monthly at APR / 12 and posted once per completed billing month.
-- Review balances and the persisted transaction ledger in the dashboard.
-- Every HTTP request is recorded in the `client_requests` table and printed as `[CLIENT_REQUEST]` in the backend console, including reads and rejected requests.
-- Amounts must be positive, limited to two decimal places, and cannot exceed available funds.
+## Start the frontend
 
-Card numbers are fictional and generated on demand from a random reference; the displayed number starts with `0000` and the security code is `000`. No full card number or security code is stored. All customer-facing routes use the first seeded client as a shared demo profile. Do not use real personal, account, or payment information. This project is a local simulation, not production banking software.
+```powershell
+docker compose -f frontend/docker-compose.yml up --build -d
+```
 
-Request audit rows include the client, method, path, mapped action, response status, timestamp, and duration. Request bodies, query strings, and headers are not stored.
+Open `http://localhost:3000`. The root route sends you to the demo profile selector. Select one of the clients seeded in MariaDB to open the dashboard.
+
+## API
+
+- `GET /pulse/clients`: list available demo profiles.
+- `GET /pulse/clients/{client_id}/dashboard`: load that client's financial profile and related records.
+- `GET /pulse/clients/{client_id}/nudges`: list recommendations.
+- `PATCH /pulse/clients/{client_id}/nudges/{nudge_id}`: persist a recommendation as `ACCEPTED` or `DISMISSED`.
+
+The SQL schema intentionally contains no passwords or credential table. The profile selector is a demo-only client switch, not real authentication. Add a proper identity provider and authorization checks before exposing any client data beyond a local demo. Do not use real personal, account, or payment information.

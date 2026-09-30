@@ -34,6 +34,7 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 
+const { customer } = await usePulseDemo()
 interface ChatMessage { role: 'assistant' | 'user'; text: string }
 const isOpen = ref(false)
 const draft = ref('')
@@ -49,13 +50,14 @@ const prompts = [
 function replyTo(question: string) {
   const normalized = question.toLocaleLowerCase('fr')
   if (normalized.includes('appartement') || normalized.includes('financer') || normalized.includes('prêt')) {
-    return 'Avec 45 000 € de capital disponible, une simulation de prêt immobilier pourrait être pertinente. Le montant accordé dépendra toutefois de vos revenus, charges et de l’analyse complète de votre dossier.'
+    return `Avec ${new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(customer.value.totalCapital)} de capital disponible, une simulation de prêt immobilier pourrait être pertinente. Le montant accordé dépendra toutefois de vos revenus, charges et de l’analyse complète de votre dossier.`
   }
   if (normalized.includes('assurance') || normalized.includes('couverture')) {
-    return 'Votre aperçu de démonstration affiche une assurance habitation KBC. Aucun contrat auto actif n’est associé au profil mock; vous pouvez consulter la suggestion Auto pour découvrir cette recommandation.'
+    const contracts = customer.value.insurances.map((insurance) => insurance.insurance_type).join(', ')
+    return `Votre portefeuille indique : ${contracts || 'aucune assurance active'}. Ces informations proviennent du profil de démonstration sélectionné.`
   }
   if (normalized.includes('invest') || normalized.includes('épargne')) {
-    return 'Votre portefeuille mock affiche 12 400 €, en hausse de 4,2 % sur 30 jours. Ce chiffre est fourni à titre illustratif et ne constitue pas un conseil en investissement.'
+    return `Votre portefeuille affiche ${new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(customer.value.investments.total)}, en évolution de ${customer.value.investments.trend30d} sur 30 jours. Cette information ne constitue pas un conseil en investissement.`
   }
   return 'Je peux vous aider à explorer vos comptes, vos assurances ou vos possibilités de financement. Ces réponses sont simulées et ne remplacent pas un conseil personnalisé.'
 }

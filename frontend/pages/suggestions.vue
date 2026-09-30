@@ -14,9 +14,10 @@
           <div class="suggestion-card-icon" :class="categoryTone(suggestion.category)"><Icon :name="categoryIcon(suggestion.category)" /></div>
           <p class="suggestion-index">OPPORTUNITÉ 0{{ suggestion.id.slice(-1) }}</p>
           <h2>{{ suggestion.title }}</h2>
+          <p class="suggestion-description">{{ suggestion.description }}</p>
           <div class="why-box"><div class="why-heading"><Icon name="mdi:creation" /> POURQUOI CETTE SUGGESTION ?</div><p>{{ suggestion.explainability }}</p></div>
           <div class="suggestion-card-actions"><button type="button" class="button-primary" @click="activateSuggestion(suggestion.id)">{{ suggestion.cta }} <Icon name="mdi:arrow-right" /></button><button type="button" class="ignore-button" @click="dismissSuggestion(suggestion.id)"><Icon name="mdi:close" /> Ignorer</button></div>
-          <p class="suggestion-disclaimer"><Icon name="mdi:information-outline" /> Sans engagement · Recommandation simulée</p>
+          <p class="suggestion-disclaimer"><Icon name="mdi:information-outline" /> Confiance {{ suggestion.confidence.toLocaleString('fr-BE', { style: 'percent', maximumFractionDigits: 0 }) }} · Recommandation simulée</p>
         </article>
       </section>
       <section v-else class="empty-suggestions"><span><Icon name="mdi:check-circle-outline" /></span><h2>Tout est à jour</h2><p>Aucune suggestion ne correspond à ce filtre. Revenez explorer vos opportunités plus tard.</p><button type="button" class="button-secondary" @click="activeFilter = 'all'">Voir toutes les suggestions</button></section>
@@ -32,7 +33,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-const { suggestions, activeSuggestionCount, toastMessage, activateSuggestion, dismissSuggestion, notify } = usePulseDemo()
+const { suggestions, activeSuggestionCount, toastMessage, activateSuggestion, dismissSuggestion, notify } = await usePulseDemo()
 const activeFilter = ref('all')
 const sortDescending = ref(true)
 const filters = [

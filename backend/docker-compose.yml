@@ -1,11 +1,36 @@
 services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: kbc_pulse_mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-kbc_dev_root}
+      MARIADB_DATABASE: kbc_pulse_db
+      MARIADB_USER: kbc_app
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-kbc_dev_password}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./kbc_pulse.sql:/docker-entrypoint-initdb.d/01-kbc-pulse.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   app:
     build: .
     container_name: python_api
     restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
       - .:/app
     environment:
       - PYTHONUNBUFFERED=1
+      - DATABASE_URL=mysql+pymysql://kbc_app:${MARIADB_PASSWORD:-kbc_dev_password}@mariadb:3306/kbc_pulse_db?charset=utf8mb4
+
+volumes:
+  mariadb_data:

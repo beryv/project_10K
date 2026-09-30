@@ -14,20 +14,23 @@
     <div class="header-profile">
       <span class="security-indicator"><i></i><span>Sécurité active</span></span>
       <span class="header-divider"></span>
-      <div class="header-person"><span class="person-avatar">MD</span><span><b>{{ customer.name }}</b><small>{{ customer.age }} ans · Profil Dynamique</small></span></div>
+      <div class="header-person"><span class="person-avatar">{{ initials }}</span><span><b>{{ customer.name }}</b><small>{{ customer.age }} ans · {{ customer.investorProfile }}</small></span></div>
       <button class="header-logout" type="button" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><Icon name="mdi:logout" /></button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const route = useRoute()
 const localePath = useLocalePath()
-const { customer, activeSuggestionCount } = usePulseDemo()
-const token = useCookie<string | null>('admin_access_token')
+const { customer, activeSuggestionCount } = await usePulseDemo()
+const clientId = useCookie<string | null>('pulse_client_id')
+const initials = computed(() => customer.value.name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase())
 
 async function logout() {
-  token.value = null
-  await navigateTo('/login')
+  clientId.value = null
+  await navigateTo(localePath('/login'))
 }
 </script>
