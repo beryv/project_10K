@@ -88,5 +88,26 @@ def seed_database():
       db.commit()
 
       print("Mass database seeding completed successfully!")
+
+    first_client = db.query(Client).order_by(Client.id).first()
+    if first_client:
+      has_current_account = (
+          db.query(Account)
+          .filter(
+              Account.client_id == first_client.id,
+              Account.account_type.in_(["Current", "Checking"]),
+          )
+          .first()
+      )
+      if not has_current_account:
+        db.add(
+            Account(
+                account_number="DEMO-CURRENT-001",
+                balance=0,
+                account_type="Current",
+                client_id=first_client.id,
+            )
+        )
+        db.commit()
   finally:
     db.close()
