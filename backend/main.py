@@ -1,20 +1,22 @@
+import os
 from datetime import datetime, timedelta
+
 from auth import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    ALGORITHM,
-    ADMIN_PASSWORD_HASH,
-    ADMIN_USERNAME,
-    SECRET_KEY,
+    create_access_token,
     get_current_admin,
+    oauth2_scheme,
+    revoke_token,
+    validate_token,
     verify_password,
 )
 from database import Base, engine, get_db
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
-from models import Account, Branch, Client, Transaction
+from models import Account, AdminUser, Branch, Client, Transaction
 from schemas import (
     AccountCreate,
     BranchCreate,
@@ -28,7 +30,6 @@ from sqlalchemy.orm import Session
 Base.metadata.create_all(bind=engine)
 seed_database()
 
-# Initialize FastAPI without default docs to use the custom polished view
 app = FastAPI(
     title="Secure Core Banking API",
     description=(
@@ -40,8 +41,20 @@ app = FastAPI(
     redoc_url=None,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- CUSTOM POLISHED /docs UI ---
+
+@app.get("/health", tags=["System Dashboard"])
+def health_check():
+  return {"status": "ok"}
+
+
 @app.get("/docs", include_in_schema=False)
 def custom_swagger_ui_html():
   return get_swagger_ui_html(
@@ -58,7 +71,6 @@ def custom_swagger_ui_html():
   )
 
 
-# --- SYSTEM DASHBOARD / ROOT ROUTE ---
 @app.get("/", response_class=HTMLResponse, tags=["System Dashboard"])
 def read_root():
   return """
@@ -81,11 +93,12 @@ def read_root():
     <body>
         <div class="container">
             <h1>Secure Core Banking API</h1>
-            <span class="badge">Status: Operational (Polished UI)</span>
-            <p>Your modular FastAPI microservice is successfully running inside Docker with custom styled documentation.</p>
+            <span class="badge">Status: Operational</span>
+            <p>Your modular FastAPI microservice is successfully running with secure configuration and input validation.</p>
             <h3>Quick Links</h3>
             <ul>
                 <li><strong>Interactive API Documentation:</strong> <a href="/docs" target="_blank">Swagger UI (/docs)</a></li>
+                <li><strong>Health Check:</strong> <a href="/health" target="_blank">/health</a></li>
             </ul>
             <a href="/docs" class="btn">Open API Explorer</a>
         </div>
@@ -94,60 +107,61 @@ def read_root():
     """
 
 
-# --- ADMIN AUTHENTICATION ---
 @app.post("/token", tags=["Authentication"])
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-  """Authenticate the admin user to receive a bearer token for writing data."""
-  if form_data.username != ADMIN_USERNAME or not verify_password(
-      form_data.password, ADMIN_PASSWORD_HASH
-  ):
+@app.post("/login", tags=["Authentication"])
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+):
+  admin_user = db.query(AdminUser).filter(AdminUser.username == form_data.username).first()
+  if admin_user is None or not verify_password(form_data.password, admin_user.password_hash):
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Incorrect admin username or password",
         headers={"WWW-Authenticate": "Bearer"},
     )
-  access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-  access_token = jwt.encode(
-      {"sub": form_data.username, "exp": datetime.utcnow() + access_token_expires},
-      SECRET_KEY,
-      algorithm=ALGORITHM,
-  )
+  access_token = create_access_token(form_data.username)
   return {"access_token": access_token, "token_type": "bearer"}
 
 
-# --- PUBLIC READ-ONLY GET ENDPOINTS ---
+@app.post("/logout", tags=["Authentication"])
+@app.post("/logout/", tags=["Authentication"])
+def logout_admin(token: str = Depends(oauth2_scheme)):
+  """Invalidates the current bearer token for this session."""
+  username = validate_token(token, allow_revoked=True)
+  revoke_token(token)
+  return {
+      "message": "Logout successful",
+      "detail": "Token revoked and cleared from client storage.",
+      "logged_out_user": username,
+  }
+
+
 @app.get("/branches/", tags=["Public Data Views"])
 def get_branches(db: Session = Depends(get_db)):
-  """Retrieve a list of all registered bank branches."""
   return db.query(Branch).all()
 
 
 @app.get("/clients/", tags=["Public Data Views"])
 def get_clients(db: Session = Depends(get_db)):
-  """Retrieve a list of all bank clients."""
   return db.query(Client).all()
 
 
 @app.get("/accounts/", tags=["Public Data Views"])
 def get_accounts(db: Session = Depends(get_db)):
-  """Retrieve all client bank accounts and current balances."""
   return db.query(Account).all()
 
 
 @app.get("/transactions/", tags=["Public Data Views"])
 def get_transactions(db: Session = Depends(get_db)):
-  """Retrieve a full history of all processed banking transactions."""
   return db.query(Transaction).all()
 
 
-# --- SECURE ADMIN POST ENDPOINTS ---
 @app.post("/addbranches/", tags=["Admin Management (Protected)"])
 def add_branch(
     branch: BranchCreate,
     db: Session = Depends(get_db),
     admin: str = Depends(get_current_admin),
 ):
-  """Register a new bank branch (Admin token required)."""
   db_branch = Branch(name=branch.name, city=branch.city)
   db.add(db_branch)
   db.commit()
@@ -161,7 +175,6 @@ def add_client(
     db: Session = Depends(get_db),
     admin: str = Depends(get_current_admin),
 ):
-  """Register a new bank client (Admin token required)."""
   db_client = Client(name=client.name, email=client.email)
   db.add(db_client)
   db.commit()
@@ -175,7 +188,10 @@ def add_account(
     db: Session = Depends(get_db),
     admin: str = Depends(get_current_admin),
 ):
-  """Open a new bank account for a client (Admin token required)."""
+  client_exists = db.query(Client).filter(Client.id == account.client_id).first()
+  if not client_exists:
+    raise HTTPException(status_code=404, detail="Client not found")
+
   db_account = Account(
       account_number=account.account_number,
       account_type=account.account_type,
@@ -194,16 +210,16 @@ def add_transaction(
     db: Session = Depends(get_db),
     admin: str = Depends(get_current_admin),
 ):
-  """Process a deposit or withdrawal on an account (Admin token required)."""
   account = db.query(Account).filter(Account.id == tx.account_id).first()
   if not account:
     raise HTTPException(status_code=404, detail="Account not found")
 
-  if tx.transaction_type == "Withdrawal":
+  tx_type = tx.transaction_type.lower()
+  if tx_type == "withdrawal":
     if account.balance < tx.amount:
       raise HTTPException(status_code=400, detail="Insufficient funds")
     account.balance -= tx.amount
-  elif tx.transaction_type == "Deposit":
+  elif tx_type == "deposit":
     account.balance += tx.amount
   else:
     raise HTTPException(status_code=400, detail="Invalid transaction type")
@@ -215,6 +231,7 @@ def add_transaction(
   )
   db.add(db_tx)
   db.commit()
+  db.refresh(db_tx)
 
   return {
       "message": "Transaction successful",

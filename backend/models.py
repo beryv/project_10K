@@ -11,6 +11,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 
+class AdminUser(Base):
+  __tablename__ = "admin_users"
+  id = Column(Integer, primary_key=True, index=True)
+  username = Column(String, unique=True, index=True)
+  password_hash = Column(String)
+
+
 class Branch(Base):
   __tablename__ = "branches"
   id = Column(Integer, primary_key=True, index=True)

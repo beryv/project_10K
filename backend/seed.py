@@ -1,10 +1,29 @@
+import hashlib
+import os
+
 from database import SessionLocal
-from models import Account, Branch, Client, Employee, Transaction
+from models import Account, AdminUser, Branch, Client, Employee, Transaction
 
 
 def seed_database():
   db = SessionLocal()
   try:
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD", "ChangeMe123!")
+    admin_password_hash = hashlib.sha256(admin_password.encode()).hexdigest()
+    admin_user = db.query(AdminUser).filter(AdminUser.username == admin_username).first()
+    if not admin_user:
+      db.add(
+          AdminUser(
+              username=admin_username,
+              password_hash=admin_password_hash,
+          )
+      )
+      db.commit()
+    elif admin_user.password_hash != admin_password_hash:
+      admin_user.password_hash = admin_password_hash
+      db.commit()
+
     if not db.query(Branch).first():
       print("Seeding database with 100 entries per table...")
 
