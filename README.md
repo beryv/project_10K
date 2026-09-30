@@ -1,31 +1,41 @@
-# Aster Bank Simulator
+# KBC Pulse AI Demo
 
-A fictional banking sandbox built with FastAPI, SQLite, and Nuxt. Use it to explore current and savings accounts, incoming payments, outgoing payments, internal transfers, and account activity. It does not connect to a bank or move real money.
+A Nuxt and FastAPI demonstration backed by MariaDB, with a bundled JSON fallback. It loads the seeded KBC client profiles, financial summaries, transactions, payments, loans, insurances, investments, and AI nudges from `backend/kbc_pulse.sql`. All financial content is fictional and all recommendation actions are for demonstration only.
 
-## Run locally
+## Start the database and API
 
-Start the backend from the `backend` directory:
-
-```powershell
-py -3 -m uvicorn demo_api:app --host 0.0.0.0 --reload --port 8000
-```
-
-Start the frontend from the `frontend` directory:
+From the project root:
 
 ```powershell
-npm install
-npm run dev -- --host 0.0.0.0
+docker compose -f backend/docker-compose.yml up --build -d
 ```
 
-Open `http://localhost:3000`. The backend API and interactive docs are available at `http://localhost:8000` and `http://localhost:8000/docs`.
+MariaDB initializes `backend/kbc_pulse.sql` when its data volume is first created. The script drops and recreates its KBC tables, so it is only mounted as an initialization script; Docker will not rerun it on an existing `mariadb_data` volume. The compose file uses development-only default credentials. Override `MARIADB_ROOT_PASSWORD` and `MARIADB_PASSWORD` for non-local environments.
 
-## Demo workflows
+The API falls back to `backend/clients_db.json` when MariaDB is unavailable. The frontend also bundles `frontend/data/clients_db.json`, so the profile selector, dashboard, local nudges, and chat remain demonstrable if the API container is offline. Local fallback nudge changes are not persisted across restarts.
 
-- Open current or savings accounts for the seeded demo customer.
-- Simulate incoming deposits, payments to a named recipient, and transfers between owned accounts.
-- Issue virtual debit and credit cards linked to an account, then freeze, unfreeze, or close them.
-- Set per-purchase limits, simulate card purchases, and pay down simulated credit balances.
-- Review balances and the persisted transaction ledger in the dashboard.
-- Amounts must be positive, limited to two decimal places, and cannot exceed available funds.
+To enable Gemini chat responses, set `GEMINI_API_KEY` in the environment or in `backend/.env` before starting Compose. `GEMINI_MODEL` can override the default `gemini-2.0-flash-lite`. If no key is configured or Gemini is unreachable, `classifier.py` returns deterministic, client-contextual responses. Nudge classification always has a deterministic transaction-trigger fallback.
 
-Card numbers are fictional and generated on demand from a random reference; the displayed number starts with `0000` and the security code is `000`. No full card number or security code is stored. All customer-facing routes use the first seeded client as a shared demo profile. Do not use real personal, account, or payment information. This project is a local simulation, not production banking software.
+The API and OpenAPI docs are available at `http://localhost:8000` and `http://localhost:8000/docs`. Check the DB connection at `http://localhost:8000/health`.
+
+## Start the frontend
+
+```powershell
+docker compose -f frontend/docker-compose.yml up --build -d
+```
+
+Open `http://localhost:3000`. The root route sends you to the demo profile selector. Select one of the clients seeded in MariaDB to open the dashboard.
+
+## API
+
+- `GET /pulse/clients`: list available demo profiles.
+- `GET /pulse/clients/{client_id}/dashboard`: load that client's financial profile and related records.
+- `GET /pulse/clients/{client_id}/nudges`: list recommendations.
+- `PATCH /pulse/clients/{client_id}/nudges/{nudge_id}`: persist a recommendation as `ACCEPTED` or `DISMISSED`.
+- `GET /v1/clients` and `GET /v1/clients/{client_id}/dashboard`: versioned profile and dashboard routes.
+- `GET /v1/clients/{client_id}/nudges`: recompute and return explainable nudges through `classifier.predict_nudges`.
+- `POST /chat` (also `/v1/chat`): accept `{ "client_id": "kbc_user_2894", "message": "..." }` and call `classifier.generate_chatbot_response` with that client's complete context.
+
+The dashboard header can switch profiles without a page reload; dashboard and nudge data refresh for the selected client and the chat history resets.
+
+The SQL schema intentionally contains no passwords or credential table. The profile selector is a demo-only client switch, not real authentication. Add a proper identity provider and authorization checks before exposing any client data beyond a local demo. Do not use real personal, account, or payment information.
