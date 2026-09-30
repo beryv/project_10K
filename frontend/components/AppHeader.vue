@@ -1,6 +1,9 @@
 <script setup lang="ts">
 const config = useRuntimeConfig();
 const { isAuthenticated, logout } = useAuth();
+const { locale } = useI18n();
+const switchLocalePath = useSwitchLocalePath();
+const localePath = useLocalePath();
 
 const handleLogout = async () => {
   const token = useCookie('auth_token');
@@ -34,10 +37,3 @@ const handleLogout = async () => {
         </NuxtLink>
     </div>
 </template>
-
-<script setup lang="ts">
-const { locale } = useI18n()
-const switchLocalePath = useSwitchLocalePath()
-// INDISPENSABLE : On importe useLocalePath pour que les liens Home et About fonctionnent dans toutes les langues
-const localePath = useLocalePath() 
-</script>
