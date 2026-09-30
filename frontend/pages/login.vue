@@ -24,10 +24,10 @@
         <p class="login-intro">Les profils disponibles sont chargés depuis la base KBC Pulse.</p>
         <form class="login-form" @submit.prevent="enterDemo">
           <label for="client-profile">Profil client</label>
-          <div class="login-input"><Icon name="mdi:account-outline" /><select id="client-profile" v-model="selectedClientId" :disabled="isLoading || !profiles?.length" required><option v-for="profile in profiles" :key="profile.client_id" :value="profile.client_id">{{ profile.display_name }} · {{ profile.age }} ans</option></select></div>
+          <div class="login-input"><Icon name="mdi:account-outline" /><select id="client-profile" v-model="selectedClientId" required><option v-for="profile in profileOptions" :key="profile.client_id" :value="profile.client_id">{{ profile.display_name }} · {{ profile.age }} ans</option></select></div>
           <p v-if="isLoading" class="profile-loading"><Icon name="mdi:loading" class="spin-icon" /> Chargement des profils…</p>
           <p v-if="errorMessage" class="login-error" role="alert"><Icon name="mdi:alert-circle-outline" />{{ errorMessage }}</p>
-          <button class="button-primary login-submit" type="submit" :disabled="isLoading || !profiles?.length || isSubmitting"><Icon :name="isSubmitting ? 'mdi:loading' : 'mdi:arrow-right-circle-outline'" :class="{ 'spin-icon': isSubmitting }" />{{ isSubmitting ? 'Ouverture…' : 'Accéder à la démonstration' }}<Icon v-if="!isSubmitting" name="mdi:arrow-right" /></button>
+          <button class="button-primary login-submit" type="submit" :disabled="isSubmitting"><Icon :name="isSubmitting ? 'mdi:loading' : 'mdi:arrow-right-circle-outline'" :class="{ 'spin-icon': isSubmitting }" />{{ isSubmitting ? 'Ouverture…' : 'Accéder à la démonstration' }}<Icon v-if="!isSubmitting" name="mdi:arrow-right" /></button>
         </form>
         <div class="security-note"><Icon name="mdi:information-outline" /><span><strong>Accès de démonstration</strong><small>Aucune authentification bancaire ni opération réelle.</small></span></div>
       </section>
@@ -38,7 +38,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import fallbackDb from '../data/clients_db.json'
 
 interface DemoClient {
   client_id: string
@@ -49,18 +50,21 @@ interface DemoClient {
 definePageMeta({ layout: false })
 const localePath = useLocalePath()
 const clientId = useCookie<string | null>('pulse_client_id', { maxAge: 30 * 60, path: '/', sameSite: 'lax' })
-const { data: profiles, pending: isLoading, error } = await useFetch<DemoClient[]>('/api/pulse/clients', { key: 'pulse-demo-clients' })
-const selectedClientId = ref(clientId.value || profiles.value?.[0]?.client_id || '')
+const activeClientId = useState<string | null>('pulse-selected-client', () => clientId.value || 'kbc_user_2894')
+const { data: profiles, pending: isLoading, error } = await useFetch<DemoClient[]>('/api/v1/clients', { key: 'pulse-demo-clients' })
+const profileOptions = computed(() => profiles.value?.length ? profiles.value : fallbackDb.clients.map((item) => item.client))
+const selectedClientId = ref(clientId.value || profileOptions.value[0]?.client_id || '')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 
 async function enterDemo() {
   errorMessage.value = ''
-  if (error.value || !profiles.value?.some((profile) => profile.client_id === selectedClientId.value)) {
-    errorMessage.value = 'Impossible de charger ce profil. Vérifiez que le backend MariaDB est démarré.'
+  if (!profileOptions.value.some((profile) => profile.client_id === selectedClientId.value)) {
+    errorMessage.value = 'Ce profil de démonstration est indisponible.'
     return
   }
   isSubmitting.value = true
+  activeClientId.value = selectedClientId.value
   clientId.value = selectedClientId.value
   await navigateTo(localePath('/dashboard'))
   isSubmitting.value = false

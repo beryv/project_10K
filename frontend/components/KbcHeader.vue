@@ -14,7 +14,7 @@
     <div class="header-profile">
       <span class="security-indicator"><i></i><span>Sécurité active</span></span>
       <span class="header-divider"></span>
-      <div class="header-person"><span class="person-avatar">{{ initials }}</span><span><b>{{ customer.name }}</b><small>{{ customer.age }} ans · {{ customer.investorProfile }}</small></span></div>
+      <div class="header-person"><span class="person-avatar">{{ initials }}</span><span class="profile-switch-copy"><select class="profile-switcher" aria-label="Changer de profil client" :value="clientId" @change="switchProfile"><option v-for="profile in profiles || []" :key="profile.client_id" :value="profile.client_id">{{ profile.display_name }}</option></select><small>{{ customer.age }} ans · {{ customer.investorProfile }}</small></span></div>
       <button class="header-logout" type="button" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><Icon name="mdi:logout" /></button>
     </div>
   </header>
@@ -22,12 +22,20 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import fallbackDb from '../data/clients_db.json'
 
 const route = useRoute()
 const localePath = useLocalePath()
-const { customer, activeSuggestionCount } = await usePulseDemo()
-const clientId = useCookie<string | null>('pulse_client_id')
+const { clientId, customer, activeSuggestionCount } = await usePulseDemo()
+interface ClientOption { client_id: string; display_name: string }
+const { data: apiProfiles } = await useFetch<ClientOption[]>('/api/v1/clients', { key: 'pulse-profile-options' })
+const profiles = computed(() => apiProfiles.value?.length ? apiProfiles.value : fallbackDb.clients.map((item) => item.client))
 const initials = computed(() => customer.value.name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase())
+
+function switchProfile(event: Event) {
+  const selectedId = (event.target as HTMLSelectElement).value
+  if (selectedId) clientId.value = selectedId
+}
 
 async function logout() {
   clientId.value = null

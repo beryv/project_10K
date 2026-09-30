@@ -1,16 +1,12 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
-<<<<<<< HEAD
 PyMySQL
-pydantic
-=======
 pydantic
 passlib[bcrypt]
 bcrypt==4.0.1
 python-jose[cryptography]
 python-multipart
 scalar-fastapi
-google
+google-genai
 python-dotenv
->>>>>>> a1452eaf5c5746c76cf438b659f9f8faab845a12

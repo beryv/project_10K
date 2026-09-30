@@ -31,6 +31,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=mysql+pymysql://kbc_app:${MARIADB_PASSWORD:-kbc_dev_password}@mariadb:3306/kbc_pulse_db?charset=utf8mb4
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-lite}
 
 volumes:
   mariadb_data:

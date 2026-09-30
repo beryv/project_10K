@@ -13,15 +13,16 @@
             <span v-if="message.role === 'assistant'" class="chat-mini-mark"><Icon name="mdi:creation" /></span>
             <p>{{ message.text }}</p>
           </article>
+          <p v-if="isThinking" class="chat-thinking" role="status"><Icon name="mdi:loading" /> KBC Pulse AI analyse vos données bancaires…</p>
           <div v-if="messages.length === 1" class="chat-suggestions">
             <button v-for="prompt in prompts" :key="prompt" type="button" @click="send(prompt)">{{ prompt }}</button>
           </div>
         </div>
         <form class="chat-entry" @submit.prevent="send(draft)">
-          <input v-model="draft" aria-label="Votre message" placeholder="Posez votre question…" />
-          <button type="submit" :disabled="!draft.trim()" aria-label="Envoyer"><Icon name="mdi:arrow-up" /></button>
+          <input v-model="draft" aria-label="Votre message" placeholder="Posez votre question…" :disabled="isThinking" />
+          <button type="submit" :disabled="!draft.trim() || isThinking" aria-label="Envoyer"><Icon name="mdi:arrow-up" /></button>
         </form>
-        <p class="chat-disclaimer">Réponses simulées pour cette démonstration.</p>
+        <p class="chat-disclaimer">Données de démonstration · Vérifiez les décisions auprès de KBC.</p>
       </section>
     </Transition>
     <button class="chat-launcher" type="button" :aria-label="isOpen ? 'Fermer le chat' : 'Ouvrir KBC Pulse Copilot'" :aria-expanded="isOpen" @click="isOpen = !isOpen">
@@ -32,20 +33,29 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
-const { customer } = await usePulseDemo()
+const { clientId, customer } = await usePulseDemo()
 interface ChatMessage { role: 'assistant' | 'user'; text: string }
 const isOpen = ref(false)
 const draft = ref('')
+const isThinking = ref(false)
+const requestSequence = ref(0)
 const messageList = ref<HTMLElement | null>(null)
 const messages = ref<ChatMessage[]>([
-  { role: 'assistant', text: 'Bonjour Marc, je suis votre copilote financier. Comment puis-je vous aider aujourd’hui ?' },
+  { role: 'assistant', text: `Bonjour ${customer.value.name}, je suis votre copilote financier. Comment puis-je vous aider aujourd’hui ?` },
 ])
 const prompts = [
   'Puis-je financer un appartement à 300k € ?',
   'Quelle est ma couverture assurance actuelle ?',
 ]
+
+watch([clientId, () => customer.value.name], () => {
+  requestSequence.value += 1
+  isThinking.value = false
+  draft.value = ''
+  messages.value = [{ role: 'assistant', text: `Bonjour ${customer.value.name}, je suis votre copilote financier. Comment puis-je vous aider aujourd’hui ?` }]
+})
 
 function replyTo(question: string) {
   const normalized = question.toLocaleLowerCase('fr')
@@ -64,15 +74,28 @@ function replyTo(question: string) {
 
 async function send(value: string) {
   const question = value.trim()
-  if (!question) return
+  if (!question || isThinking.value) return
+  const requestId = ++requestSequence.value
+  const selectedClientId = clientId.value
   draft.value = ''
   messages.value.push({ role: 'user', text: question })
+  isThinking.value = true
   await nextTick()
   if (messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
-  window.setTimeout(async () => {
+  try {
+    const result = await $fetch<{ response: string }>('/api/chat', {
+      method: 'POST',
+      body: { client_id: selectedClientId, message: question },
+    })
+    if (requestId !== requestSequence.value || selectedClientId !== clientId.value) return
+    messages.value.push({ role: 'assistant', text: result.response })
+  } catch {
+    if (requestId !== requestSequence.value || selectedClientId !== clientId.value) return
     messages.value.push({ role: 'assistant', text: replyTo(question) })
+  } finally {
+    if (requestId === requestSequence.value) isThinking.value = false
     await nextTick()
     if (messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
-  }, 450)
+  }
 }
 </script>

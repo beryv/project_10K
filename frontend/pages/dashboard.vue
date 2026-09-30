@@ -7,7 +7,8 @@
         <button type="button" class="date-selector"><Icon name="mdi:calendar-month-outline" /> 30 septembre 2026 <Icon name="mdi:chevron-down" /></button>
       </div>
 
-      <p v-if="error" class="data-error" role="alert"><Icon name="mdi:database-alert-outline" /> Données KBC indisponibles. Vérifiez que MariaDB et l’API backend sont démarrés.</p>
+      <p v-if="dashboard?.source === 'json'" class="data-fallback" role="status"><Icon name="mdi:database-arrow-down-outline" /> Mode démo local · données JSON embarquées</p>
+      <p v-else-if="error" class="data-error" role="alert"><Icon name="mdi:database-alert-outline" /> Données KBC indisponibles. Vérifiez que MariaDB et l’API backend sont démarrés.</p>
 
       <section v-if="topSuggestion" class="hero-suggestion">
         <div class="hero-copy">
@@ -18,7 +19,7 @@
           <div class="hero-actions"><button type="button" class="button-primary" @click="activateSuggestion(topSuggestion.id)">{{ topSuggestion.cta }} <Icon name="mdi:arrow-right" /></button><button type="button" class="button-quiet" @click="showExplanation = true"><Icon name="mdi:help-circle-outline" /> Pourquoi cette suggestion ?</button></div>
           <p class="hero-footnote"><Icon name="mdi:information-outline" /> Décision à votre rythme, sans engagement.</p>
         </div>
-        <div class="hero-visual" aria-label="Illustration d'assurance auto"><div class="visual-grid"></div><div class="visual-sun"></div><div class="visual-road"></div><div class="visual-car"><span class="car-window"></span><span class="car-wheel wheel-left"></span><span class="car-wheel wheel-right"></span><span class="car-light"></span></div><div class="visual-shield"><Icon name="mdi:shield-check" /></div><div class="visual-caption"><span>Protection Auto KBC</span><strong>Prête pour la route.</strong></div></div>
+        <div class="hero-visual" :class="{ 'hero-visual-auto': topSuggestion.category === 'Assurance' }" :aria-label="`Illustration : ${topSuggestion.sourceCategory}`"><div class="visual-grid"></div><template v-if="topSuggestion.category === 'Assurance'"><div class="visual-sun"></div><div class="visual-road"></div><div class="visual-car"><span class="car-window"></span><span class="car-wheel wheel-left"></span><span class="car-wheel wheel-right"></span><span class="car-light"></span></div><div class="visual-shield"><Icon name="mdi:shield-check" /></div></template><template v-else><div class="finance-orbit"></div><div class="finance-building"><span></span><span></span><span></span><b></b></div><div class="finance-chart"><i v-for="bar in financeBars" :key="bar" :style="{ height: `${bar}%` }"></i></div><div class="visual-shield"><Icon :name="topSuggestion.category === 'Prêt' ? 'mdi:home-city-outline' : 'mdi:chart-line'" /></div></template><div class="visual-caption"><span>{{ topSuggestion.category === 'Assurance' ? 'Protection Auto KBC' : topSuggestion.category === 'Prêt' ? 'Projet à financer' : 'Votre patrimoine' }}</span><strong>{{ topSuggestion.category === 'Assurance' ? 'Prête pour la route.' : topSuggestion.category === 'Prêt' ? 'Construire la suite.' : 'Faire grandir vos projets.' }}</strong></div></div>
       </section>
 
       <div class="dashboard-columns">
@@ -69,6 +70,7 @@ const { customer, dashboard, pending, error, suggestions, activeSuggestionCount,
 const firstName = computed(() => customer.value.name.split(' ')[0])
 const topSuggestion = computed(() => suggestions.value.find((item) => item.status === 'active'))
 const showExplanation = ref(false)
+const financeBars = [33, 49, 41, 68, 55, 83, 72]
 const monthlyTransactions = computed(() => (dashboard.value?.transactions ?? []).filter((transaction) => transaction.tx_date.startsWith('2026-09')))
 const totalIncoming = computed(() => monthlyTransactions.value.filter((transaction) => transaction.tx_type === 'CREDIT').reduce((sum, transaction) => sum + transaction.amount, 0))
 const totalOutgoing = computed(() => monthlyTransactions.value.filter((transaction) => transaction.tx_type === 'DEBIT').reduce((sum, transaction) => sum + transaction.amount, 0))

@@ -1,4 +1,5 @@
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
+import fallbackDb from '../data/clients_db.json'
 
 interface ApiClient {
   client_id: string
@@ -42,6 +43,7 @@ interface DashboardResponse {
   loans: { loan_id: number; loan_type: string; initial_amount: number; remaining_balance: number; monthly_payment: number; status: string; start_date: string; end_date: string }[]
   insurances: { insurance_id: number; contract_code: string; insurance_type: string; monthly_premium: number; status: string; start_date: string; end_date: string | null }[]
   nudges: ApiNudge[]
+  source?: 'mariadb' | 'json'
 }
 
 export interface PulseSuggestion {
@@ -70,24 +72,34 @@ function ctaFor(category: PulseSuggestion['category']) {
 }
 
 export async function usePulseDemo() {
-  const clientId = useCookie<string>('pulse_client_id', {
-    default: () => 'kbc_user_2894',
-    path: '/',
-    sameSite: 'lax',
+  const profileCookie = useCookie<string | null>('pulse_client_id', { path: '/', sameSite: 'lax' })
+  const clientId = useState<string | null>('pulse-selected-client', () => profileCookie.value || 'kbc_user_2894')
+  const toastMessage = useState('pulse-toast', () => '')
+  const activeClientId = computed(() => clientId.value || 'kbc_user_2894')
+  watch(clientId, (selectedId) => { profileCookie.value = selectedId })
+  const localDashboard = computed(() => {
+    const fallback = fallbackDb.clients.find((item) => item.client.client_id === activeClientId.value) ?? fallbackDb.clients[0]
+    return { ...fallback, source: 'json' as const } as DashboardResponse
   })
   const { data, pending, error, refresh } = await useFetch<DashboardResponse>(
-    () => `/api/pulse/clients/${encodeURIComponent(clientId.value)}/dashboard`,
-    { key: `pulse-dashboard-${clientId.value}` },
+    () => `/api/v1/clients/${encodeURIComponent(activeClientId.value)}/dashboard`,
+    { key: `pulse-dashboard-${activeClientId.value}`, default: () => localDashboard.value, watch: false, dedupe: 'defer' },
   )
+  watch(clientId, async () => {
+    data.value = localDashboard.value
+    await nextTick()
+    await refresh()
+  })
+  const dashboard = computed(() => data.value ?? localDashboard.value)
 
   const customer = computed(() => {
-    const client = data.value?.client
-    const summary = data.value?.summary
-    const payments = data.value?.upcoming_payments ?? []
-    const investments = data.value?.investments ?? []
-    const insurances = data.value?.insurances ?? []
+    const client = dashboard.value.client
+    const summary = dashboard.value.summary
+    const payments = dashboard.value.upcoming_payments ?? []
+    const investments = dashboard.value.investments ?? []
+    const insurances = dashboard.value.insurances ?? []
     return {
-      id: client?.client_id ?? clientId.value,
+      id: client?.client_id ?? activeClientId.value,
       name: client?.display_name ?? 'Profil indisponible',
       age: client?.age ?? 0,
       profile: client?.persona_type ?? '',
@@ -107,11 +119,11 @@ export async function usePulseDemo() {
         date: new Intl.DateTimeFormat('fr-BE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${payment.due_date}T12:00:00`)),
       })),
       insurances: insurances.filter((item) => item.status === 'ACTIVE'),
-      loans: data.value?.loans ?? [],
+      loans: dashboard.value.loans ?? [],
     }
   })
 
-  const suggestions = computed<PulseSuggestion[]>(() => (data.value?.nudges ?? []).map((nudge) => {
+  const suggestions = computed<PulseSuggestion[]>(() => (dashboard.value.nudges ?? []).map((nudge) => {
     const category = categoryGroup(nudge.category)
     return {
       id: nudge.nudge_id,
@@ -128,7 +140,6 @@ export async function usePulseDemo() {
   }))
 
   const activeSuggestionCount = computed(() => suggestions.value.filter((item) => item.status === 'active').length)
-  const toastMessage = useState('pulse-toast', () => '')
 
   function notify(message: string) {
     toastMessage.value = message
@@ -141,14 +152,16 @@ export async function usePulseDemo() {
 
   async function updateSuggestion(id: string, status: 'ACCEPTED' | 'DISMISSED') {
     try {
-      await $fetch(`/api/pulse/clients/${encodeURIComponent(clientId.value)}/nudges/${encodeURIComponent(id)}`, {
+      await $fetch(`/api/v1/clients/${encodeURIComponent(activeClientId.value)}/nudges/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: { status },
       })
       await refresh()
       notify(status === 'ACCEPTED' ? 'Suggestion enregistrée dans votre espace (démo).' : 'Suggestion ignorée')
     } catch {
-      notify('Impossible de mettre à jour cette suggestion. Vérifiez la connexion à la base.')
+      const localNudge = dashboard.value.nudges.find((item) => item.nudge_id === id)
+      if (localNudge) localNudge.status = status
+      notify(localNudge ? 'Suggestion mise à jour en mode local (non persisté).' : 'Impossible de mettre à jour cette suggestion.')
     }
   }
 
@@ -160,5 +173,5 @@ export async function usePulseDemo() {
     return updateSuggestion(id, 'DISMISSED')
   }
 
-  return { clientId, customer, dashboard: data, pending, error, refresh, suggestions, activeSuggestionCount, toastMessage, notify, activateSuggestion, dismissSuggestion }
+  return { clientId, customer, dashboard, pending, error, refresh, suggestions, activeSuggestionCount, toastMessage, notify, activateSuggestion, dismissSuggestion }
 }
