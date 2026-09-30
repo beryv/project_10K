@@ -79,5 +79,11 @@ def recommend(c: list[Account], l: list[Event]):
           "events:" + \
           "\n".join([str(e) for e in l])
 
+    res = sess.models.generate_content(model="gemini-3.5-flash-lite",
+                                       config=genai.types.GenerateContentConfig(
+                                           system_instruction=sys_prompt
+                                       ),
+                                       contents=pr)
+
     res = sess.send_message(pr)
     return loads(res)    
