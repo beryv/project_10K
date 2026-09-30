@@ -26,7 +26,7 @@
           <label for="username">Identifiant ou numéro client</label>
           <div class="login-input"><Icon name="mdi:account-outline" /><input id="username" v-model.trim="credentials.username" autocomplete="username" required /></div>
           <label for="password">Mot de passe</label>
-          <div class="login-input"><Icon name="mdi:lock-outline" /><input id="password" v-model="credentials.password" type="password" autocomplete="current-password" required /><button type="button" class="password-toggle" :aria-label="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'" @click="showPassword = !showPassword"><Icon :name="showPassword ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" /></button></div>
+          <div class="login-input"><Icon name="mdi:lock-outline" /><input id="password" v-model="credentials.password" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" required /><button type="button" class="password-toggle" :aria-label="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'" @click="showPassword = !showPassword"><Icon :name="showPassword ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" /></button></div>
           <p v-if="errorMessage" class="login-error" role="alert"><Icon name="mdi:alert-circle-outline" />{{ errorMessage }}</p>
           <button class="button-primary login-submit" type="submit" :disabled="isSubmitting"><Icon :name="isSubmitting ? 'mdi:loading' : 'mdi:lock-check-outline'" :class="{ 'spin-icon': isSubmitting }" />{{ isSubmitting ? 'Connexion…' : 'Connexion sécurisée' }}<Icon v-if="!isSubmitting" name="mdi:arrow-right" /></button>
         </form>
